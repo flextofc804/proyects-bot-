@@ -1,7 +1,8 @@
 import fs from "fs"
+import os from "os"
 import path from "path"
 import https from "https"
-import { exec } from "child_process"
+import { exec, spawn } from "child_process"
 import { promisify } from "util"
 import { fileURLToPath } from "url"
 
@@ -700,6 +701,101 @@ function cookiesFlag() {
   return fs.existsSync(cookiesPath) ? `--cookies "${cookiesPath}"` : ""
 }
 
+const POT_VERSION = "2.0.2"
+const POT_PORT = 4416
+const potSetupPromise = { current: null }
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function pingPotServer() {
+  try {
+    const response = await fetch(`http://127.0.0.1:${POT_PORT}/ping`, { signal: AbortSignal.timeout(3000) })
+    return response.ok
+  } catch (e) {
+    return false
+  }
+}
+
+function ytDlpPluginsDir() {
+  if (process.platform === "win32") {
+    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "yt-dlp", "plugins")
+  }
+  return path.join(os.homedir(), ".config", "yt-dlp", "plugins")
+}
+
+async function setupPotProvider() {
+  if (potSetupPromise.current) return potSetupPromise.current
+  potSetupPromise.current = (async () => {
+    try {
+      if (await pingPotServer()) {
+        log("servidor PO Token ya está corriendo")
+        return true
+      }
+
+      const buildMain = path.join(root, "pot_provider", "build", "main.js")
+      if (!fs.existsSync(buildMain)) {
+        log("pot_provider/build no encontrado; capa PO Token omitida")
+        return false
+      }
+
+      const pluginsDir = ytDlpPluginsDir()
+      fs.mkdirSync(pluginsDir, { recursive: true })
+      const pluginZip = path.join(pluginsDir, "bgutil-ytdlp-pot-provider.zip")
+      if (!fs.existsSync(pluginZip)) {
+        log("descargando plugin PO Token para yt-dlp...")
+        await downloadFile(
+          `https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/download/${POT_VERSION}/bgutil-ytdlp-pot-provider.zip`,
+          pluginZip
+        )
+      }
+
+      const potDir = path.join(root, "pot_provider")
+      if (!fs.existsSync(path.join(potDir, "node_modules", "express"))) {
+        log("instalando dependencias del servidor PO Token (solo la primera vez)...")
+        await execAsync("npm install --no-save --no-audit --no-fund", { cwd: potDir, timeout: 600000, maxBuffer: 1024 * 1024 * 8 })
+      }
+
+      const child = spawn(process.execPath, [buildMain, "--port", String(POT_PORT)], {
+        cwd: potDir,
+        detached: true,
+        stdio: "ignore"
+      })
+      child.unref()
+      for (let i = 0; i < 20; i++) {
+        if (await pingPotServer()) {
+          log("servidor PO Token listo en 127.0.0.1:" + POT_PORT)
+          return true
+        }
+        await sleepMs(1500)
+      }
+      log("el servidor PO Token no respondió")
+      return false
+    } catch (e) {
+      log(`capa PO Token no disponible: ${e?.message || e}`)
+      return false
+    }
+  })()
+  return potSetupPromise.current
+}
+
+async function ytDlpAttempt(binary, kind, videoId, filePrefix, output, cookies, ffmpegFlag, client) {
+  const parts = [`"${binary}"`, formatFor(kind)]
+  if (client) parts.push(`--extractor-args "youtube:player_client=${client}"`)
+  if (cookies) parts.push(cookies)
+  if (ffmpegFlag) parts.push(ffmpegFlag)
+  parts.push("--no-playlist --no-progress --no-warnings --geo-bypass --no-mtime --retries 2 --fragment-retries 2 --socket-timeout 20")
+  parts.push(`-o "${output}" "https://www.youtube.com/watch?v=${videoId}"`)
+  await execAsync(parts.join(" "), { timeout: 300000, maxBuffer: 1024 * 1024 * 16 })
+  const nameMatch = fs
+    .readdirSync(root)
+    .filter((name) => name.startsWith(`${filePrefix}.`))
+    .sort((a, b) => fs.statSync(path.join(root, b)).mtimeMs - fs.statSync(path.join(root, a)).mtimeMs)
+  if (nameMatch.length > 0) return path.join(root, nameMatch[0])
+  return null
+}
+
 async function ytDlpDownload(videoId, kind, prefix) {
   const binary = await ensureYtDlp()
   if (!binary) throw new Error("yt-dlp no disponible")
@@ -709,23 +805,30 @@ async function ytDlpDownload(videoId, kind, prefix) {
   const ffmpegFlag = ffmpeg && ffmpeg !== "ffmpeg" ? `--ffmpeg-location "${ffmpeg}"` : ""
   const clients = ["android_vr", "tv", "android", "ios", "mweb", "web_safari", "web_embedded", "tv_embedded"]
   for (const client of clients) {
-    const parts = [`"${binary}"`, formatFor(kind)]
-    if (client) parts.push(`--extractor-args "youtube:player_client=${client}"`)
-    if (cookies) parts.push(cookies)
-    if (ffmpegFlag) parts.push(ffmpegFlag)
-    parts.push("--no-playlist --no-progress --no-warnings --geo-bypass --no-mtime --retries 2 --fragment-retries 2 --socket-timeout 20")
-    parts.push(`-o "${output}" "https://www.youtube.com/watch?v=${videoId}"`)
     try {
-      await execAsync(parts.join(" "), { timeout: 300000, maxBuffer: 1024 * 1024 * 16 })
-      const nameMatch = fs
-        .readdirSync(root)
-        .filter((name) => name.startsWith(`${prefix}.`))
-        .sort((a, b) => fs.statSync(path.join(root, b)).mtimeMs - fs.statSync(path.join(root, a)).mtimeMs)
-      if (nameMatch.length > 0) return path.join(root, nameMatch[0])
+      const found = await ytDlpAttempt(binary, kind, videoId, prefix, output, cookies, ffmpegFlag, client)
+      if (found) return found
     } catch (e) {
       log(`yt-dlp cliente ${client} falló: ${String(e?.stderr || e?.message || e).split("\n")[0].slice(0, 150)}`)
     }
   }
+
+  const potReady = await setupPotProvider()
+  if (potReady) {
+    for (const client of ["web", "mweb", "web_safari", "tv", "web_embedded"]) {
+      try {
+        log(`intento con PO Token (cliente ${client})...`)
+        const found = await ytDlpAttempt(binary, kind, videoId, prefix, output, cookies, ffmpegFlag, client)
+        if (found) {
+          log(`descarga OK con PO Token (cliente ${client})`)
+          return found
+        }
+      } catch (e) {
+        log(`yt-dlp PO Token cliente ${client} falló: ${String(e?.stderr || e?.message || e).split("\n")[0].slice(0, 150)}`)
+      }
+    }
+  }
+
   throw new Error("yt-dlp no pudo descargar (YouTube pidió verificación)")
 }
 
