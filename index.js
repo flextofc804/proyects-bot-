@@ -2104,9 +2104,10 @@ case "play":
                 fs.existsSync(path.join(process.cwd(), "cookies.txt")) ||
                 fs.existsSync(path.join(process.cwd(), "cookies.json"))
               await reply(
-                hasCookies
+                (hasCookies
                   ? "⚠️ YouTube bloquea las descargas incluso con cookies.\n\n1) Regenerá tus cookies: entrá a *youtube.com* logueado desde el navegador, instalá la extensión *Get cookies.txt LOCALLY*, exportá el archivo y reemplazalo en la carpeta del bot (las cookies viejas vencen en pocos días).\n2) Si con cookies frescas sigue fallando, la IP de tu hosting está bloqueada por YouTube (pasa en hostings gratuitos): en ese caso probá correr el bot desde tu PC o un VPS con IP limpia.\n3) El bot ya intenta una API pública como último recurso y tampoco respondió: suele ser temporal, esperá unos minutos y probá de nuevo (usá #ytdebug para ver el estado)."
-                  : "⚠️ YouTube está bloqueando la IP de este servidor.\n\nSubí el archivo *cookies.txt* (o cookies.json) a la carpeta del bot y volvé a intentar: eso desbloquea las descargas."
+                  : "⚠️ YouTube está bloqueando la IP de este servidor.\n\nSubí el archivo *cookies.txt* (o cookies.json) a la carpeta del bot y volvé a intentar: eso desbloquea las descargas.") +
+                `\n\nMotivo técnico: ${reason.slice(0, 200)}`
               )
             } else {
               await reply("Error al descargar el audio, intentá con otro video")
@@ -2153,9 +2154,10 @@ case "video":
         fs.existsSync(path.join(process.cwd(), "cookies.txt")) ||
         fs.existsSync(path.join(process.cwd(), "cookies.json"))
       await reply(
-        hasCookies
+        (hasCookies
           ? "⚠️ YouTube bloquea las descargas incluso con cookies.\n\n1) Regenerá tus cookies: entrá a *youtube.com* logueado desde el navegador, instalá la extensión *Get cookies.txt LOCALLY*, exportá el archivo y reemplazalo en la carpeta del bot (las cookies viejas vencen en pocos días).\n2) Si con cookies frescas sigue fallando, la IP de tu hosting está bloqueada por YouTube (pasa en hostings gratuitos): en ese caso probá correr el bot desde tu PC o un VPS con IP limpia.\n3) El bot ya intenta una API pública como último recurso y tampoco respondió: suele ser temporal, esperá unos minutos y probá de nuevo (usá #ytdebug para ver el estado)."
-          : "⚠️ YouTube está bloqueando la IP de este servidor.\n\nSubí el archivo *cookies.txt* (o cookies.json) a la carpeta del bot y volvé a intentar: eso desbloquea las descargas."
+          : "⚠️ YouTube está bloqueando la IP de este servidor.\n\nSubí el archivo *cookies.txt* (o cookies.json) a la carpeta del bot y volvé a intentar: eso desbloquea las descargas.") +
+        `\n\nMotivo técnico: ${reason.slice(0, 200)}`
       )
     } else {
       await reply("Error al descargar el video, intentá con otro")
