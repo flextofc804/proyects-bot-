@@ -1097,6 +1097,27 @@ async function patchPlayDl() {
   }
 }
 
+async function checkCookiesSession() {
+  const cookies = readCookiesHeader()
+  if (!cookies) return { count: 0, loggedIn: false }
+  const count = cookies.split(";").length
+  try {
+    const response = await request("https://www.youtube.com/?hl=es&gl=ES", {
+      headers: browserHeaders(),
+      timeout: 20000
+    })
+    if (response.status !== 200) return { count, loggedIn: null }
+    const body = response.body.toString("utf8")
+    if (body.includes('"loggedIn":true')) return { count, loggedIn: true }
+    if (body.includes('"loggedIn":false') || body.includes("Iniciar sesión") || body.includes("Sign in")) {
+      return { count, loggedIn: false }
+    }
+    return { count, loggedIn: null }
+  } catch (e) {
+    return { count, loggedIn: null }
+  }
+}
+
 export async function diagnose() {
   const lines = []
   lines.push(`Node: ${process.version}`)
@@ -1113,7 +1134,16 @@ export async function diagnose() {
     lines.push("yt-dlp: NO disponible")
   }
 
-  lines.push(`cookies.txt: ${fs.existsSync(path.join(root, "cookies.txt")) ? "presente" : "NO presente"}`)
+  const cookieCheck = await checkCookiesSession()
+  const cookieState =
+    cookieCheck.count === 0
+      ? "NO presente"
+      : cookieCheck.loggedIn === true
+        ? `presente (${cookieCheck.count} cookies, sesión iniciada: SÍ)`
+        : cookieCheck.loggedIn === false
+          ? `presente (${cookieCheck.count} cookies, sesión iniciada: NO → cookies vencidas o mal exportadas)`
+          : `presente (${cookieCheck.count} cookies, sesión iniciada: no se pudo verificar)`
+  lines.push(`cookies.txt: ${cookieState}`)
 
   const potReady = await setupPotProvider()
   lines.push(`PO Token: ${potReady ? "servidor activo" : "no disponible (mirá los logs del servidor para el motivo)"}`)
