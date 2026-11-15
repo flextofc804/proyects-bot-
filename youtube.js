@@ -17,8 +17,6 @@ const YT_UA =
 const MOBILE_UA =
   "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
-const COBALT_BASES = ["https://rue-cobalt.xenon.zone", "https://cobaltapi.cjs.nz"]
-
 function log(message) {
   console.log(`[YT] ${message}`)
 }
@@ -840,42 +838,6 @@ function cleanPrefix(prefix) {
   }
 }
 
-async function cobaltDownload(videoId, kind, prefix) {
-  const target = `https://www.youtube.com/watch?v=${videoId}`
-  const payload =
-    kind === "audio"
-      ? { url: target, downloadMode: "audio" }
-      : { url: target, downloadMode: "auto", videoQuality: "720", youtubeVideoCodec: "h264" }
-  let lastError = "sin respuesta"
-  for (const base of COBALT_BASES) {
-    try {
-      const response = await request(`${base}/`, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      })
-      const data = JSON.parse(response.body || "{}")
-      if ((data.status === "tunnel" || data.status === "redirect") && data.url) {
-        const match = typeof data.filename === "string" ? data.filename.match(/\.([a-z0-9]{2,4})$/i) : null
-        const extension = match ? `.${match[1].toLowerCase()}` : kind === "audio" ? ".mp3" : ".mp4"
-        const output = path.join(root, `${prefix}${extension}`)
-        await downloadFile(data.url, output)
-        if (fs.existsSync(output) && fs.statSync(output).size > 10240) {
-          log(`descarga OK vía API pública (${base})`)
-          return output
-        }
-        removeFile(output)
-        throw new Error("archivo incompleto")
-      }
-      lastError = data.error?.code || `HTTP ${response.status}`
-    } catch (e) {
-      lastError = e?.message || String(e)
-    }
-    log(`API pública ${base} falló: ${lastError}`)
-  }
-  throw new Error(lastError)
-}
-
 async function mediaFile(videoId, kind) {
   const prefix = `zenith_${kind}_${Date.now()}_${Math.floor(Math.random() * 100000)}`
   const errors = []
@@ -892,14 +854,6 @@ async function mediaFile(videoId, kind) {
       file = await ytDlpDownload(videoId, kind, prefix)
     } catch (e) {
       errors.push(`yt-dlp: ${e?.message || e}`)
-      cleanPrefix(prefix)
-    }
-  }
-  if (!file) {
-    try {
-      file = await cobaltDownload(videoId, kind, prefix)
-    } catch (e) {
-      errors.push(`API pública: ${e?.message || e}`)
       cleanPrefix(prefix)
     }
   }
@@ -1193,23 +1147,6 @@ export async function diagnose() {
 
   const potReady = await setupPotProvider()
   lines.push(`PO Token: ${potReady ? "servidor activo" : "no disponible (mirá los logs del servidor para el motivo)"}`)
-
-  try {
-    const apiResponse = await request(`${COBALT_BASES[0]}/`, {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ url: "https://www.youtube.com/watch?v=jNQXAC9IVRw", downloadMode: "audio" })
-    })
-    const apiData = JSON.parse(apiResponse.body || "{}")
-    const apiOk = (apiData.status === "tunnel" || apiData.status === "redirect") && !!apiData.url
-    lines.push(
-      apiOk
-        ? "API pública: disponible (último recurso si YouTube bloquea todo)"
-        : `API pública: sin servicio (${apiData.error?.code || `HTTP ${apiResponse.status}`})`
-    )
-  } catch (e) {
-    lines.push(`API pública: sin conexión (${String(e?.message || e).slice(0, 80)})`)
-  }
 
   try {
     const started = Date.now()
