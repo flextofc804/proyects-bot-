@@ -115,15 +115,21 @@ function ensureYtDlp() {
   ytDlpPromise = (async () => {
     try {
       fs.mkdirSync(binDir, { recursive: true })
-      if (fs.existsSync(realBinaryPath)) {
+      const rootBinaryName = process.platform === "win32" ? "yt-dlp.exe" : "yt-dlp"
+      const rootBinaryPath = path.join(root, rootBinaryName)
+      const candidates = [realBinaryPath, rootBinaryPath]
+      for (const candidate of candidates) {
+        if (!fs.existsSync(candidate)) continue
         try {
-          await execAsync(`"${realBinaryPath}" --version`, { timeout: 60000 })
-          writeWrapper()
-          addToPath(binDir)
-          log("yt-dlp OK")
-          return realBinaryPath
+          await execAsync(`"${candidate}" --version`, { timeout: 60000 })
+          if (candidate === realBinaryPath) {
+            writeWrapper()
+            addToPath(binDir)
+          }
+          log(`yt-dlp OK (${candidate})`)
+          return candidate
         } catch (e) {
-          removeFile(realBinaryPath)
+          if (candidate === realBinaryPath) removeFile(realBinaryPath)
         }
       }
       const systemHasIt = await commandExists("yt-dlp")
@@ -547,6 +553,7 @@ function downloadStream(url, destination, userAgent = activeClientUa) {
               Accept: "*/*",
               "Accept-Language": "es-ES,es;q=0.9",
               Referer: "https://www.youtube.com/",
+              Cookie: cookiesHeader(),
               Range: "bytes=0-"
             }
           },
