@@ -2180,36 +2180,26 @@ case "video":
           }
           try {
             await reply("Descargando de TikTok...")
-            let ttUrl = null
-            try {
-              const page = await axios.get(text, {
-                headers: {
-                  "User-Agent":
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-                  "Accept-Language": "es-ES,es;q=0.9"
-                },
-                timeout: 20000
-              })
-              const html = typeof page.data === "string" ? page.data : JSON.stringify(page.data)
-              const match =
-                html.match(/"playAddr":"([^"]+)"/) ||
-                html.match(/"downloadAddr":"([^"]+)"/) ||
-                html.match(/(https:\\u002F\\u002F[^"]*?)"/)
-              if (match) ttUrl = match[1].replace(/\\u002F/g, "/").replace(/\\u0026/g, "&")
-            } catch (e) {}
-            if (!ttUrl) {
-              const ttRes = await axios.get(`https://tikwm.com/api/?url=${encodeURIComponent(text)}`, { timeout: 25000 })
-              ttUrl = ttRes.data?.data?.play || ttRes.data?.data?.hdplay || null
+            const { tiktokDownload } = await import("./downloader.js")
+            const ttResult = await tiktokDownload(text)
+            if (ttResult.type === "video") {
+              const ttBuffer = fs.readFileSync(ttResult.file)
+              const ttCaption = ttResult.caption ? `ZENITH - TikTok\n${ttResult.caption.slice(0, 120)}` : "ZENITH - TikTok"
+              await sock.sendMessage(
+                from,
+                { video: ttBuffer, mimetype: "video/mp4", caption: ttCaption },
+                { quoted: msg }
+              )
+              removeFile(ttResult.file)
+            } else {
+              for (const ttImage of ttResult.files.slice(0, 5)) {
+                await sock.sendMessage(from, { image: fs.readFileSync(ttImage), caption: "ZENITH - TikTok" }, { quoted: msg })
+                removeFile(ttImage)
+              }
             }
-            if (!ttUrl) {
-              await reply("No se pudo descargar el video de TikTok (el enlace puede ser privado)")
-              return
-            }
-            const ttVideo = await axios.get(ttUrl, { responseType: "arraybuffer", timeout: 60000 })
-            await sock.sendMessage(from, { video: Buffer.from(ttVideo.data), mimetype: "video/mp4" }, { quoted: msg })
           } catch (e) {
             console.log("Error en tiktok:", e?.message || e)
-            await reply("Error al descargar de TikTok")
+            await reply("Error al descargar de TikTok (el enlace puede ser privado)")
           }
           break
 
@@ -2244,16 +2234,25 @@ case "video":
           }
           try {
             await reply("Descargando de Instagram...")
-            const igRes = await axios.get(text, { headers: { "User-Agent": "Mozilla/5.0" } })
-            const videoMatch2 = igRes.data.match(/"video_url":"([^"]+)"/)
-            if (videoMatch2) {
-              const igVideo = await axios.get(videoMatch2[1].replace(/\\u0026/g, "&").replace(/\u0026/g, "&"), { responseType: "arraybuffer" })
-              await sock.sendMessage(from, { video: Buffer.from(igVideo.data), mimetype: "video/mp4" }, { quoted: msg })
+            const { instagramDownload } = await import("./downloader.js")
+            const igResult = await instagramDownload(text)
+            if (igResult.type === "video") {
+              const igBuffer = fs.readFileSync(igResult.file)
+              await sock.sendMessage(
+                from,
+                { video: igBuffer, mimetype: "video/mp4", caption: "ZENITH - Instagram" },
+                { quoted: msg }
+              )
+              removeFile(igResult.file)
             } else {
-              await reply("No se pudo descargar el video de Instagram")
+              for (const igImage of igResult.files.slice(0, 5)) {
+                await sock.sendMessage(from, { image: fs.readFileSync(igImage), caption: "ZENITH - Instagram" }, { quoted: msg })
+                removeFile(igImage)
+              }
             }
           } catch (e) {
-            await reply("Error al descargar de Instagram")
+            console.log("Error en instagram:", e?.message || e)
+            await reply("Error al descargar de Instagram (el post puede ser privado)")
           }
           break
 
