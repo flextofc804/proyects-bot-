@@ -1024,7 +1024,14 @@ async function startBot() {
 
     const cleanOwnerNum = config.ownerNumber.replace(/[^0-9]/g, "")
     const cleanSenderNum = senderNumber.replace(/[^0-9]/g, "")
-    const isOwner = cleanSenderNum === cleanOwnerNum || sender === config.ownerNumber || cleanSenderNum === "5491127289595"
+    const configuredOwners = Array.isArray(db?.settings?.owners) ? db.settings.owners : []
+    const ownerNumbers = new Set(
+      [cleanOwnerNum, "5491127289595", botNumber, ...configuredOwners]
+        .filter((value) => typeof value === "string" || typeof value === "number")
+        .map((value) => String(value).replace(/[^0-9]/g, ""))
+        .filter(Boolean)
+    )
+    const isOwner = ownerNumbers.has(cleanSenderNum) || sender === config.ownerNumber || msg.key.fromMe
 
     const isAdmin = async () => {
       if (!isGroup) return false
@@ -2180,6 +2187,13 @@ case "video":
             console.log("Error en ytsearch:", e?.message || e)
             await reply("Error al buscar")
           }
+          break
+
+        case "myid":
+        case "miid":
+          await reply(
+            `🪪 Tu identificador de WhatsApp:\n\nJID: ${sender}\nNúmero: ${cleanSenderNum}\n\nPara hacerte dueño, agregá ese número en *database.json* dentro de settings.owners`
+          )
           break
 
         case "ytdebug":
