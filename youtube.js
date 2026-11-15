@@ -10,18 +10,6 @@ const root = path.dirname(fileURLToPath(import.meta.url))
 const binDir = path.join(root, "bin")
 const realBinaryName = process.platform === "win32" ? "yt-dlp-bin.exe" : "yt-dlp-bin"
 const realBinaryPath = path.join(binDir, realBinaryName)
-import fs from "fs"
-import path from "path"
-import https from "https"
-import { exec } from "child_process"
-import { promisify } from "util"
-import { fileURLToPath } from "url"
-
-const execAsync = promisify(exec)
-const root = path.dirname(fileURLToPath(import.meta.url))
-const binDir = path.join(root, "bin")
-const realBinaryName = process.platform === "win32" ? "yt-dlp-bin.exe" : "yt-dlp-bin"
-const realBinaryPath = path.join(binDir, realBinaryName)
 
 const YT_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
@@ -559,7 +547,6 @@ function downloadStream(url, destination, userAgent = activeClientUa) {
               Accept: "*/*",
               "Accept-Language": "es-ES,es;q=0.9",
               Referer: "https://www.youtube.com/",
-              Cookie: cookiesHeader(),
               Range: "bytes=0-"
             }
           },
@@ -713,13 +700,13 @@ async function ytDlpDownload(videoId, kind, prefix) {
   const cookies = cookiesFlag()
   const ffmpeg = await ensureFfmpeg()
   const ffmpegFlag = ffmpeg && ffmpeg !== "ffmpeg" ? `--ffmpeg-location "${ffmpeg}"` : ""
-  const clients = ["android", "ios", "web_embedded", "tv_embedded", "mweb", "safari", "chrome"]
+  const clients = ["android_vr", "tv", "android", "ios", "mweb", "web_safari", "web_embedded", "tv_embedded"]
   for (const client of clients) {
     const parts = [`"${binary}"`, formatFor(kind)]
     if (client) parts.push(`--extractor-args "youtube:player_client=${client}"`)
     if (cookies) parts.push(cookies)
     if (ffmpegFlag) parts.push(ffmpegFlag)
-    parts.push("--no-playlist --no-progress --no-warnings --retries 2 --fragment-retries 2 --socket-timeout 20")
+    parts.push("--no-playlist --no-progress --no-warnings --geo-bypass --no-mtime --retries 2 --fragment-retries 2 --socket-timeout 20")
     parts.push(`-o "${output}" "https://www.youtube.com/watch?v=${videoId}"`)
     try {
       await execAsync(parts.join(" "), { timeout: 300000, maxBuffer: 1024 * 1024 * 16 })
@@ -728,7 +715,9 @@ async function ytDlpDownload(videoId, kind, prefix) {
         .filter((name) => name.startsWith(`${prefix}.`))
         .sort((a, b) => fs.statSync(path.join(root, b)).mtimeMs - fs.statSync(path.join(root, a)).mtimeMs)
       if (nameMatch.length > 0) return path.join(root, nameMatch[0])
-    } catch (e) {}
+    } catch (e) {
+      log(`yt-dlp cliente ${client} falló: ${String(e?.stderr || e?.message || e).split("\n")[0].slice(0, 150)}`)
+    }
   }
   throw new Error("yt-dlp no pudo descargar (YouTube pidió verificación)")
 }
@@ -742,20 +731,52 @@ function cleanPrefix(prefix) {
 async function mediaFile(videoId, kind) {
   const prefix = `zenith_${kind}_${Date.now()}_${Math.floor(Math.random() * 100000)}`
   const errors = []
+  let file = null
   try {
-    return await scraperDownload(videoId, kind, prefix)
+    file = await scraperDownload(videoId, kind, prefix)
   } catch (e) {
     log(`scraping falló: ${e?.message || e}`)
     errors.push(`scraping: ${e?.message || e}`)
     cleanPrefix(prefix)
   }
-  try {
-    return await ytDlpDownload(videoId, kind, prefix)
-  } catch (e) {
-    errors.push(`yt-dlp: ${e?.message || e}`)
-    cleanPrefix(prefix)
+  if (!file) {
+    try {
+      file = await ytDlpDownload(videoId, kind, prefix)
+    } catch (e) {
+      errors.push(`yt-dlp: ${e?.message || e}`)
+      cleanPrefix(prefix)
+    }
   }
-  throw new Error(errors.join(" | "))
+  if (!file) throw new Error(errors.join(" | "))
+
+  if (kind === "audio") {
+    const extension = path.extname(file).toLowerCase()
+    if (extension === ".webm" || extension === ".opus") {
+      const converted = await convertAudioToMp3(file)
+      if (converted) file = converted
+    }
+  }
+  return file
+}
+
+async function convertAudioToMp3(input) {
+  const ffmpeg = await ensureFfmpeg()
+  if (!ffmpeg) return null
+  const output = path.join(root, `zenith_audio_${Date.now()}_${Math.floor(Math.random() * 100000)}.mp3`)
+  const binary = ffmpeg === "ffmpeg" ? "ffmpeg" : `"${ffmpeg}"`
+  try {
+    await execAsync(`${binary} -y -i "${input}" -vn -ar 44100 -ac 2 -b:a 128k "${output}"`, {
+      timeout: 180000,
+      maxBuffer: 1024 * 1024 * 8
+    })
+    if (fs.existsSync(output) && fs.statSync(output).size > 2048) {
+      removeFile(input)
+      log("audio webm convertido a mp3")
+      return output
+    }
+  } catch (e) {}
+  removeFile(output)
+  return null
 }
 
 function deepFind(node, predicate, depth = 0) {
