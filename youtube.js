@@ -5,6 +5,8 @@ import https from "https"
 import { exec, spawn } from "child_process"
 import { promisify } from "util"
 import { fileURLToPath } from "url"
+import { Readable } from "stream"
+import { pipeline } from "stream/promises"
 
 const execAsync = promisify(exec)
 const root = path.dirname(fileURLToPath(import.meta.url))
@@ -20,6 +22,22 @@ const MOBILE_UA =
 const COBALT_BASES = ["https://rue-cobalt.xenon.zone", "https://cobaltapi.cjs.nz"]
 
 let ytBlockUntil = 0
+
+function customApiInfo() {
+  try {
+    const file = path.join(root, "api-propia.txt")
+    if (!fs.existsSync(file)) return null
+    const lines = fs
+      .readFileSync(file, "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+    if (!lines[0] || !/^https?:\/\//.test(lines[0])) return null
+    return { base: lines[0].replace(/\/+$/, ""), key: lines[1] || null }
+  } catch {
+    return null
+  }
+}
 
 function log(message) {
   console.log(`[YT] ${message}`)
@@ -842,6 +860,57 @@ function cleanPrefix(prefix) {
   }
 }
 
+function extensionFromType(type, kind) {
+  if (/mpeg/.test(type)) return ".mp3"
+  if (/audio\/mp4/.test(type)) return ".m4a"
+  if (/video\/mp4/.test(type)) return ".mp4"
+  if (/webm/.test(type)) return ".webm"
+  if (/ogg/.test(type)) return ".opus"
+  return kind === "audio" ? ".m4a" : ".mp4"
+}
+
+async function downloadApiFile(url, destination, kind) {
+  const response = await fetch(url, {
+    headers: { "User-Agent": "zenith-bot/1.0" },
+    signal: AbortSignal.timeout(900000)
+  })
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`
+    try {
+      const data = await response.json()
+      message = data.error || message
+    } catch {}
+    throw new Error(message)
+  }
+  const disposition = response.headers.get("content-disposition") || ""
+  const nameMatch = disposition.match(/filename="?([^";]+)"?/i)
+  const extension =
+    nameMatch && /\.[a-z0-9]{2,4}$/i.test(nameMatch[1])
+      ? path.extname(nameMatch[1]).toLowerCase()
+      : extensionFromType(response.headers.get("content-type") || "", kind)
+  const finalPath = destination.replace(/\.part$/, extension)
+  await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(finalPath))
+  return finalPath
+}
+
+async function customApiDownload(videoId, kind, prefix) {
+  const api = customApiInfo()
+  if (!api) throw new Error("no configurada")
+  const params = new URLSearchParams({
+    url: `https://www.youtube.com/watch?v=${videoId}`,
+    mode: kind === "audio" ? "audio" : "video"
+  })
+  if (api.key) params.set("key", api.key)
+  const output = path.join(root, `${prefix}.part`)
+  const file = await downloadApiFile(`${api.base}/download?${params.toString()}`, output, kind)
+  if (fs.existsSync(file) && fs.statSync(file).size > 10240) {
+    log(`descarga OK vía tu API propia (${api.base})`)
+    return file
+  }
+  removeFile(file)
+  throw new Error("archivo vacío")
+}
+
 async function cobaltDownload(videoId, kind, prefix) {
   const target = `https://www.youtube.com/watch?v=${videoId}`
   const payload =
@@ -885,6 +954,16 @@ async function mediaFile(videoId, kind) {
   const prefix = `zenith_${kind}_${Date.now()}_${Math.floor(Math.random() * 100000)}`
   const errors = []
   let file = null
+  if (customApiInfo()) {
+    try {
+      file = await customApiDownload(videoId, kind, prefix)
+    } catch (e) {
+      const message = String(e?.message || e)
+      log(`API propia falló: ${message}`)
+      errors.push(`API propia: ${message}`)
+      cleanPrefix(prefix)
+    }
+  }
   const localBlocked = Date.now() < ytBlockUntil
   if (localBlocked) {
     log(`YouTube dio bloqueo de bot hace poco: salteando scraping y yt-dlp por ${Math.ceil((ytBlockUntil - Date.now()) / 60000)} min más`)
@@ -1214,6 +1293,26 @@ export async function diagnose() {
 
   const potReady = await setupPotProvider()
   lines.push(`PO Token: ${potReady ? "servidor activo" : "no disponible (mirá los logs del servidor para el motivo)"}`)
+
+  const customApi = customApiInfo()
+  if (!customApi) {
+    lines.push("API propia: no configurada (opcional; mirá la carpeta zenith-api)")
+  } else {
+    try {
+      const healthResponse = await fetch(`${customApi.base}/health`, {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(15000)
+      })
+      const healthData = await healthResponse.json().catch(() => null)
+      lines.push(
+        healthData?.ok
+          ? `API propia: OK (${customApi.base})`
+          : `API propia: respondió raro (HTTP ${healthResponse.status})`
+      )
+    } catch (e) {
+      lines.push(`API propia: configurada pero NO responde (${String(e?.message || e).slice(0, 60)})`)
+    }
+  }
 
   try {
     const apiResponse = await request(`${COBALT_BASES[0]}/`, {
