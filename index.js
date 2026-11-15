@@ -2182,6 +2182,23 @@ case "video":
           }
           break
 
+        case "ytdebug":
+        case "ytdiag":
+          if (!isOwner) {
+            await reply("Solo el dueño puede usar este comando")
+            return
+          }
+          try {
+            await reply("Diagnosticando descargas de YouTube... (puede tardar 1-2 minutos)")
+            const { diagnose } = await import("./youtube.js")
+            const report = await diagnose()
+            await reply(`🩺 DIAGNÓSTICO YOUTUBE\n\n${report}`)
+          } catch (e) {
+            console.log("Error en ytdebug:", e?.message || e)
+            await reply("Error al ejecutar el diagnóstico")
+          }
+          break
+
         case "tiktok":
         case "tt":
           if (!text) {

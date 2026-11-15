@@ -1097,6 +1097,40 @@ async function patchPlayDl() {
   }
 }
 
+export async function diagnose() {
+  const lines = []
+  lines.push(`Node: ${process.version}`)
+
+  const binary = await ensureYtDlp()
+  if (binary) {
+    try {
+      const { stdout } = await execAsync(`"${binary}" --version`, { timeout: 30000 })
+      lines.push(`yt-dlp: ${String(stdout).trim()} (${binary})`)
+    } catch (e) {
+      lines.push(`yt-dlp: presente pero falla al ejecutar (${binary})`)
+    }
+  } else {
+    lines.push("yt-dlp: NO disponible")
+  }
+
+  lines.push(`cookies.txt: ${fs.existsSync(path.join(root, "cookies.txt")) ? "presente" : "NO presente"}`)
+
+  const potReady = await setupPotProvider()
+  lines.push(`PO Token: ${potReady ? "servidor activo" : "no disponible (mirá los logs del servidor para el motivo)"}`)
+
+  try {
+    const started = Date.now()
+    const file = await mediaFile("jNQXAC9IVRw", "audio")
+    const size = fs.existsSync(file) ? fs.statSync(file).size : 0
+    lines.push(`descarga de prueba: OK (${Math.round(size / 1024)} KB en ${Math.round((Date.now() - started) / 1000)}s)`)
+    removeFile(file)
+  } catch (e) {
+    lines.push(`descarga de prueba: FALLÓ → ${String(e?.message || e).slice(0, 350)}`)
+  }
+
+  return lines.join("\n")
+}
+
 export {
   ensureYtDlp,
   ensureFfmpeg,
