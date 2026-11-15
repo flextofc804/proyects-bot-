@@ -87,10 +87,26 @@ function pickAsset() {
   return "yt-dlp_linux"
 }
 
+let systemYtDlpChecked = false
+let systemYtDlpFound = false
+async function findSystemYtDlp() {
+  if (systemYtDlpChecked) return systemYtDlpFound
+  systemYtDlpChecked = true
+  try {
+    await execFileAsync("yt-dlp", ["--version"], { timeout: 30000 })
+    systemYtDlpFound = true
+    log("usando yt-dlp del sistema")
+  } catch {
+    systemYtDlpFound = false
+  }
+  return systemYtDlpFound
+}
+
 let ytDlpPromise = null
 function ensureYtDlp() {
   if (ytDlpPromise) return ytDlpPromise
   ytDlpPromise = (async () => {
+    if (await findSystemYtDlp()) return "yt-dlp"
     if (fs.existsSync(binaryPath)) {
       try {
         await execFileAsync(binaryPath, ["--version"], { timeout: 30000 })
@@ -152,7 +168,7 @@ function sendJson(res, status, data) {
   res.end(body)
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   let parsed
   try {
     parsed = new URL(req.url, `http://localhost:${port}`)
@@ -162,8 +178,8 @@ const server = http.createServer((req, res) => {
   }
 
   if (parsed.pathname === "/health") {
-    const binary = fs.existsSync(binaryPath)
-    sendJson(res, 200, { ok: true, ytDlp: binary, clave: !!getClave() })
+    const ytDlpReady = fs.existsSync(binaryPath) || (await findSystemYtDlp())
+    sendJson(res, 200, { ok: true, ytDlp: ytDlpReady, clave: !!getClave() })
     return
   }
 
