@@ -871,7 +871,7 @@ function extensionFromType(type, kind) {
 
 async function downloadApiFile(url, destination, kind) {
   const response = await fetch(url, {
-    headers: { "User-Agent": "zenith-bot/1.0" },
+    headers: { "User-Agent": "zenith-bot/1.0", "bypass-tunnel-reminder": "true" },
     signal: AbortSignal.timeout(900000)
   })
   if (!response.ok) {
@@ -1300,7 +1300,7 @@ export async function diagnose() {
   } else {
     try {
       const healthResponse = await fetch(`${customApi.base}/health`, {
-        headers: { Accept: "application/json" },
+        headers: { Accept: "application/json", "bypass-tunnel-reminder": "true" },
         signal: AbortSignal.timeout(15000)
       })
       const healthData = await healthResponse.json().catch(() => null)
