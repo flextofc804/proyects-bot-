@@ -19,6 +19,8 @@ const MOBILE_UA =
 
 const COBALT_BASES = ["https://rue-cobalt.xenon.zone", "https://cobaltapi.cjs.nz"]
 
+let ytBlockUntil = 0
+
 function log(message) {
   console.log(`[YT] ${message}`)
 }
@@ -848,28 +850,31 @@ async function cobaltDownload(videoId, kind, prefix) {
       : { url: target, downloadMode: "auto", videoQuality: "720", youtubeVideoCodec: "h264" }
   let lastError = "sin respuesta"
   for (const base of COBALT_BASES) {
-    try {
-      const response = await request(`${base}/`, {
-        method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      })
-      const data = JSON.parse(response.body || "{}")
-      if ((data.status === "tunnel" || data.status === "redirect") && data.url) {
-        const match = typeof data.filename === "string" ? data.filename.match(/\.([a-z0-9]{2,4})$/i) : null
-        const extension = match ? `.${match[1].toLowerCase()}` : kind === "audio" ? ".mp3" : ".mp4"
-        const output = path.join(root, `${prefix}${extension}`)
-        await downloadFile(data.url, output)
-        if (fs.existsSync(output) && fs.statSync(output).size > 10240) {
-          log(`descarga OK vía API pública (${base})`)
-          return output
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await request(`${base}/`, {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        })
+        const data = JSON.parse(response.body || "{}")
+        if ((data.status === "tunnel" || data.status === "redirect") && data.url) {
+          const match = typeof data.filename === "string" ? data.filename.match(/\.([a-z0-9]{2,4})$/i) : null
+          const extension = match ? `.${match[1].toLowerCase()}` : kind === "audio" ? ".mp3" : ".mp4"
+          const output = path.join(root, `${prefix}${extension}`)
+          await downloadFile(data.url, output)
+          if (fs.existsSync(output) && fs.statSync(output).size > 10240) {
+            log(`descarga OK vía API pública (${base})`)
+            return output
+          }
+          removeFile(output)
+          throw new Error("archivo incompleto")
         }
-        removeFile(output)
-        throw new Error("archivo incompleto")
+        lastError = data.error?.code || `HTTP ${response.status}`
+      } catch (e) {
+        lastError = e?.message || String(e)
       }
-      lastError = data.error?.code || `HTTP ${response.status}`
-    } catch (e) {
-      lastError = e?.message || String(e)
+      if (attempt < 2) await sleepMs(4000)
     }
     log(`API pública ${base} falló: ${lastError}`)
   }
@@ -880,19 +885,35 @@ async function mediaFile(videoId, kind) {
   const prefix = `zenith_${kind}_${Date.now()}_${Math.floor(Math.random() * 100000)}`
   const errors = []
   let file = null
-  try {
-    file = await scraperDownload(videoId, kind, prefix)
-  } catch (e) {
-    log(`scraping falló: ${e?.message || e}`)
-    errors.push(`scraping: ${e?.message || e}`)
-    cleanPrefix(prefix)
+  const localBlocked = Date.now() < ytBlockUntil
+  if (localBlocked) {
+    log(`YouTube dio bloqueo de bot hace poco: salteando scraping y yt-dlp por ${Math.ceil((ytBlockUntil - Date.now()) / 60000)} min más`)
   }
-  if (!file) {
+  if (!localBlocked) {
     try {
-      file = await ytDlpDownload(videoId, kind, prefix)
+      file = await scraperDownload(videoId, kind, prefix)
     } catch (e) {
-      errors.push(`yt-dlp: ${e?.message || e}`)
+      const scrapeError = String(e?.message || e)
+      log(`scraping falló: ${scrapeError}`)
+      errors.push(`scraping: ${scrapeError}`)
       cleanPrefix(prefix)
+      if (scrapeError.includes("LOGIN_REQUIRED") || scrapeError.includes("Sign in to confirm")) {
+        ytBlockUntil = Date.now() + 10 * 60 * 1000
+        log("YouTube marcó esta IP como bot: por 10 minutos las descargas van directo a la API pública")
+      }
+    }
+    if (!file) {
+      try {
+        file = await ytDlpDownload(videoId, kind, prefix)
+      } catch (e) {
+        const message = String(e?.message || e)
+        errors.push(`yt-dlp: ${message}`)
+        cleanPrefix(prefix)
+        if (message.includes("Sign in to confirm") || message.includes("LOGIN_REQUIRED")) {
+          ytBlockUntil = Date.now() + 10 * 60 * 1000
+          log("YouTube marcó esta IP como bot: por 10 minutos las descargas van directo a la API pública")
+        }
+      }
     }
   }
   if (!file) {
