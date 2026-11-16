@@ -893,9 +893,13 @@ function renderMenuListRows() {
   return rows
 }
 
-async function sendMenuInteractive(sock, from, msg, menuText) {
+async function sendMenuInteractive(sock, from, msg, menuText, opts = {}) {
   const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = await import("@whiskeysockets/baileys")
-  const media = await prepareWAMessageMedia({ image: { url: MENU_IMAGE } }, { upload: sock.waUploadToServer })
+  const withImage = opts.withImage !== false
+  let media = null
+  if (withImage && MENU_IMAGE) {
+    media = await prepareWAMessageMedia({ image: { url: MENU_IMAGE } }, { upload: sock.waUploadToServer })
+  }
   const buttons = [
     {
       name: "single_select",
@@ -918,8 +922,8 @@ async function sendMenuInteractive(sock, from, msg, menuText) {
           messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
           interactiveMessage: proto.Message.InteractiveMessage.create({
             header: proto.Message.InteractiveMessage.Header.create({
-              ...(media.imageMessage ? { imageMessage: media.imageMessage } : {}),
-              hasMediaAttachment: Boolean(media.imageMessage)
+              ...(media?.imageMessage ? { imageMessage: media.imageMessage } : {}),
+              hasMediaAttachment: Boolean(media?.imageMessage)
             }),
             body: proto.Message.InteractiveMessage.Body.create({ text: menuText }),
             footer: proto.Message.InteractiveMessage.Footer.create({ text: "ZENITH Bot" }),
@@ -949,8 +953,23 @@ async function sendMenuInteractive(sock, from, msg, menuText) {
 
 async function enviarMenuPrincipal(sock, from, msg) {
   const text = renderMenuHome()
+  const isGroupChat = from.endsWith("@g.us")
   await startTyping(sock, from)
   await sleep(350 + Math.floor(Math.random() * 400))
+  if (isGroupChat) {
+    if (MENU_IMAGE) {
+      await sock.sendMessage(from, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
+    } else {
+      await sock.sendMessage(from, { text }, { quoted: msg })
+    }
+    try {
+      await sendMenuInteractive(sock, from, msg, "Tocá el botón para ver todos los comandos 👇", { withImage: false })
+    } catch (e) {
+      console.log("botón de menú en grupo falló:", e?.message || e)
+    }
+    await stopTyping(sock, from)
+    return
+  }
   let interactiveOk = false
   if (MENU_IMAGE) {
     try {
