@@ -1,9 +1,10 @@
 import http from "http"
 import https from "https"
 import fs from "fs"
+import os from "os"
 import path from "path"
 import crypto from "crypto"
-import { execFile } from "child_process"
+import { execFile, spawn } from "child_process"
 import { promisify } from "util"
 import { fileURLToPath } from "url"
 
@@ -15,6 +16,10 @@ const binaryPath = path.join(binDir, binaryName)
 const cookiesPath = path.join(root, "cookies.txt")
 const clavePath = path.join(root, "clave.txt")
 const port = Number(process.env.PORT || 3333)
+const POT_PORT = 4416
+const POT_VERSION = "2.0.2"
+const IG_APP_ID = "936619743392459"
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 const HOSTS_OK = [
   "youtube.com", "www.youtube.com", "youtu.be", "www.youtu.be", "music.youtube.com",
@@ -164,6 +169,159 @@ async function runYtDlp(url, mode, id) {
   return found.length ? path.join(root, found[0]) : null
 }
 
+function potServerDir() {
+  const sibling = path.join(root, "..", "pot_provider")
+  if (fs.existsSync(path.join(sibling, "build", "main.js"))) return sibling
+  const local = path.join(root, "pot_provider")
+  if (fs.existsSync(path.join(local, "build", "main.js"))) return local
+  return null
+}
+
+async function pingPotServer() {
+  try {
+    const response = await fetch(`http://127.0.0.1:${POT_PORT}/ping`, { signal: AbortSignal.timeout(3000) })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
+let potPromise = null
+
+function ensurePotServer() {
+  if (potPromise) return potPromise
+  potPromise = (async () => {
+    try {
+      if (await pingPotServer()) {
+        log("servidor PO Token ya está corriendo")
+        return true
+      }
+      const potDir = potServerDir()
+      if (!potDir) {
+        log("pot_provider no encontrado junto a la API; PO Token omitido")
+        return false
+      }
+      const pluginsDir = path.join(os.homedir(), ".config", "yt-dlp", "plugins")
+      fs.mkdirSync(pluginsDir, { recursive: true })
+      const pluginZip = path.join(pluginsDir, "bgutil-ytdlp-pot-provider.zip")
+      if (!fs.existsSync(pluginZip)) {
+        log("descargando plugin PO Token para yt-dlp...")
+        await downloadBinary(
+          `https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/download/${POT_VERSION}/bgutil-ytdlp-pot-provider.zip`,
+          pluginZip
+        )
+      }
+      if (!fs.existsSync(path.join(potDir, "node_modules", "express"))) {
+        log("instalando dependencias del servidor PO Token (solo la primera vez)...")
+        await execFileAsync("npm", ["install", "--no-save", "--no-audit", "--no-fund"], { cwd: potDir, timeout: 600000 })
+      }
+      const child = spawn(process.execPath, [path.join(potDir, "build", "main.js"), "--port", String(POT_PORT)], {
+        cwd: potDir,
+        detached: true,
+        stdio: "ignore"
+      })
+      child.unref()
+      for (let i = 0; i < 20; i++) {
+        if (await pingPotServer()) {
+          log(`servidor PO Token listo en 127.0.0.1:${POT_PORT}`)
+          return true
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+      }
+      log("el servidor PO Token no respondió")
+      return false
+    } catch (e) {
+      log(`PO Token no disponible: ${e?.message || e}`)
+      return false
+    }
+  })()
+  return potPromise
+}
+
+function igShortcode(target) {
+  const match = target.match(/instagram\.com\/(?:reel|reels|p|tv)\/([A-Za-z0-9_-]+)/i)
+  return match ? match[1] : null
+}
+
+function igMediaId(shortcode) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+  let id = 0n
+  for (const character of shortcode) {
+    const index = alphabet.indexOf(character)
+    if (index < 0) return null
+    id = id * 64n + BigInt(index)
+  }
+  return id.toString()
+}
+
+function httpsGet(url, headers, timeout = 20000) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, { headers, timeout }, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        response.resume()
+        httpsGet(new URL(response.headers.location, url).toString(), headers, timeout).then(resolve, reject)
+        return
+      }
+      let data = ""
+      response.setEncoding("utf8")
+      response.on("data", (chunk) => { data += chunk })
+      response.on("end", () => resolve({ status: response.statusCode, body: data }))
+    })
+    request.on("timeout", () => request.destroy(new Error("timeout")))
+    request.on("error", reject)
+  })
+}
+
+function downloadTo(url, destination, headers, timeout = 120000) {
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, { headers, timeout }, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        response.resume()
+        downloadTo(new URL(response.headers.location, url).toString(), destination, headers, timeout).then(resolve, reject)
+        return
+      }
+      if (response.statusCode !== 200) {
+        response.resume()
+        reject(new Error(`HTTP ${response.statusCode}`))
+        return
+      }
+      const writer = fs.createWriteStream(destination)
+      response.pipe(writer)
+      writer.on("finish", () => resolve(destination))
+      writer.on("error", reject)
+      response.on("error", reject)
+    })
+    request.on("timeout", () => request.destroy(new Error("timeout")))
+    request.on("error", reject)
+  })
+}
+
+async function instagramMobile(target, id) {
+  const shortcode = igShortcode(target)
+  if (!shortcode) throw new Error("no pude leer el código del post de Instagram")
+  const mediaId = igMediaId(shortcode)
+  if (!mediaId) throw new Error("no pude interpretar el código del post")
+  const headers = {
+    "x-ig-app-id": IG_APP_ID,
+    "user-agent": BROWSER_UA,
+    accept: "*/*"
+  }
+  const { status, body } = await httpsGet(`https://i.instagram.com/api/v1/media/${mediaId}/info/`, headers)
+  if (status !== 200) throw new Error(`Instagram respondió HTTP ${status}`)
+  let item
+  try {
+    item = JSON.parse(body)?.items?.[0]
+  } catch {
+    throw new Error("Instagram devolvió una respuesta ilegible")
+  }
+  if (!item) throw new Error("Instagram no devolvió datos del post")
+  const video = (item.video_versions || [])[0]?.url
+  if (!video) throw new Error("el post no tiene video descargable (¿son imágenes?)")
+  const destination = path.join(root, `api_dl_${id}.mp4`)
+  await downloadTo(video, destination, { "user-agent": BROWSER_UA, referer: "https://www.instagram.com/" })
+  return destination
+}
+
 function sendJson(res, status, data) {
   const body = JSON.stringify(data)
   res.writeHead(status, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) })
@@ -181,7 +339,7 @@ const server = http.createServer(async (req, res) => {
 
   if (parsed.pathname === "/health") {
     const ytDlpReady = fs.existsSync(binaryPath) || (await findSystemYtDlp())
-    sendJson(res, 200, { ok: true, ytDlp: ytDlpReady, clave: !!getClave() })
+    sendJson(res, 200, { ok: true, ytDlp: ytDlpReady, clave: !!getClave(), pot: await pingPotServer() })
     return
   }
 
@@ -209,7 +367,20 @@ const server = http.createServer(async (req, res) => {
 
   const id = crypto.randomBytes(4).toString("hex")
   log(`descarga pedida: ${mode} ${target}`)
-  runYtDlp(target, mode, id)
+  const isInstagram = /(^|\.)instagram\.com$/.test(hostname)
+  const isYouTube = /(^|\.)youtube\.com$/.test(hostname) || hostname === "youtu.be" || hostname === "www.youtu.be"
+  let chain
+  if (isInstagram) {
+    chain = instagramMobile(target, id).catch((igError) => {
+      log(`método Instagram sin login falló: ${String(igError?.message || igError).slice(0, 150)}`)
+      return runYtDlp(target, mode, id)
+    })
+  } else if (isYouTube) {
+    chain = ensurePotServer().then(() => runYtDlp(target, mode, id))
+  } else {
+    chain = runYtDlp(target, mode, id)
+  }
+  chain
     .then((file) => {
       if (!file) {
         sendJson(res, 200, { ok: false, error: "yt-dlp no generó archivo" })
@@ -247,6 +418,7 @@ server.on("error", (e) => {
 
 ensureYtDlp()
   .then(() => {
+    ensurePotServer()
     let clave = getClave()
     if (!clave) clave = crearClave()
     server.listen(port, () => {
