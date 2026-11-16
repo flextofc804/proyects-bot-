@@ -893,29 +893,94 @@ function renderMenuListRows() {
   return rows
 }
 
+async function sendMenuInteractive(sock, from, msg, menuText) {
+  const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = await import("@whiskeysockets/baileys")
+  const media = await prepareWAMessageMedia({ image: { url: MENU_IMAGE } }, { upload: sock.waUploadToServer })
+  const buttons = [
+    {
+      name: "single_select",
+      buttonParamsJson: JSON.stringify({
+        title: "Ver comandos 📜",
+        sections: [
+          {
+            title: "📂 Categorías",
+            rows: renderMenuListRows().map(({ title, rowId, description }) => ({ id: rowId, title, description }))
+          }
+        ]
+      })
+    }
+  ]
+  const message = generateWAMessageFromContent(
+    from,
+    {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
+          interactiveMessage: proto.Message.InteractiveMessage.create({
+            header: proto.Message.InteractiveMessage.Header.create({
+              ...(media.imageMessage ? { imageMessage: media.imageMessage } : {}),
+              hasMediaAttachment: Boolean(media.imageMessage)
+            }),
+            body: proto.Message.InteractiveMessage.Body.create({ text: menuText }),
+            footer: proto.Message.InteractiveMessage.Footer.create({ text: "ZENITH Bot" }),
+            nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({ buttons })
+          })
+        }
+      }
+    },
+    { quoted: msg, userJid: sock.user?.id }
+  )
+  const nodes = [
+    {
+      tag: "biz",
+      attrs: {},
+      content: [
+        {
+          tag: "interactive",
+          attrs: { type: "native_flow", v: "1" },
+          content: [{ tag: "native_flow", attrs: { v: "9", name: "mixed" } }]
+        }
+      ]
+    }
+  ]
+  if (!from.endsWith("@g.us")) nodes.push({ tag: "bot", attrs: { biz_bot: "1" } })
+  await sock.relayMessage(from, message.message, { messageId: message.key.id, additionalNodes: nodes })
+}
+
 async function enviarMenuPrincipal(sock, from, msg) {
   const text = renderMenuHome()
   await startTyping(sock, from)
   await sleep(350 + Math.floor(Math.random() * 400))
+  let interactiveOk = false
   if (MENU_IMAGE) {
-    await sock.sendMessage(from, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
-  } else {
-    await sock.sendMessage(from, { text }, { quoted: msg })
+    try {
+      await sendMenuInteractive(sock, from, msg, text)
+      interactiveOk = true
+    } catch (e) {
+      console.log("menú interactivo con imagen falló:", e?.message || e)
+    }
   }
-  try {
-    await sendList(sock, from, {
-      text: "Tocá el botón para ver todos los comandos 👇",
-      buttonText: "Ver comandos 📜",
-      sections: [
-        {
-          title: "📂 Categorías",
-          rows: renderMenuListRows().map(({ title, rowId, description }) => ({ id: rowId, title, description }))
-        }
-      ],
-      quoted: msg
-    })
-  } catch (e) {
-    console.log("botón de menú no soportado por este WhatsApp:", e?.message || e)
+  if (!interactiveOk) {
+    if (MENU_IMAGE) {
+      await sock.sendMessage(from, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
+    } else {
+      await sock.sendMessage(from, { text }, { quoted: msg })
+    }
+    try {
+      await sendList(sock, from, {
+        text: "Tocá el botón para ver todos los comandos 👇",
+        buttonText: "Ver comandos 📜",
+        sections: [
+          {
+            title: "📂 Categorías",
+            rows: renderMenuListRows().map(({ title, rowId, description }) => ({ id: rowId, title, description }))
+          }
+        ],
+        quoted: msg
+      })
+    } catch (e) {
+      console.log("botón de menú no soportado por este WhatsApp:", e?.message || e)
+    }
   }
   await stopTyping(sock, from)
 }
