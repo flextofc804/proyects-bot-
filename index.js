@@ -150,7 +150,7 @@ async function stickerToImage(buffer) {
   }
 }
 
-const MENU_IMAGE = ""
+const MENU_IMAGE = fs.existsSync(path.join(process.cwd(), "menu.jpg")) ? path.join(process.cwd(), "menu.jpg") : ""
 const searchHistory = new Map()
 
 const config = {
@@ -871,6 +871,23 @@ async function enviarTextoMenu(sock, from, msg, text) {
   await stopTyping(sock, from)
 }
 
+function renderMenuListRows() {
+  const rows = menuOrder.map((key) => {
+    const cat = menuCategories[key]
+    return {
+      title: `${cat.emoji} ${cat.title}`,
+      rowId: `${config.prefix}menu ${key}`,
+      description: `${countCategoryCommands(key)} comandos`
+    }
+  })
+  rows.push({
+    title: "📖 Todos los comandos",
+    rowId: `${config.prefix}menu todos`,
+    description: "catálogo completo"
+  })
+  return rows
+}
+
 async function enviarMenuPrincipal(sock, from, msg) {
   const text = renderMenuHome()
   await startTyping(sock, from)
@@ -879,6 +896,21 @@ async function enviarMenuPrincipal(sock, from, msg) {
     await sock.sendMessage(from, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
   } else {
     await sock.sendMessage(from, { text }, { quoted: msg })
+  }
+  try {
+    await sock.sendMessage(
+      from,
+      {
+        text: "Tocá el botón para ver todos los comandos 👇",
+        footer: "ZENITH Bot",
+        title: "📜 MENÚ DE COMANDOS",
+        buttonText: "Ver comandos 📜",
+        sections: [{ title: "📂 Categorías", rows: renderMenuListRows() }]
+      },
+      { quoted: msg }
+    )
+  } catch (e) {
+    console.log("botón de menú no soportado por este WhatsApp:", e?.message || e)
   }
   await stopTyping(sock, from)
 }
