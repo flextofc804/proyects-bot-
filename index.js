@@ -969,16 +969,14 @@ async function enviarMenuPrincipal(sock, from, msg) {
   const text = renderMenuHome()
   await startTyping(sock, from)
   await sleep(350 + Math.floor(Math.random() * 400))
-  try {
-    if (MENU_IMAGE) {
-      await sock.sendMessage(from, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
-    } else {
-      await sock.sendMessage(from, { text }, { quoted: msg })
+  if (MENU_IMAGE) {
+    try {
+      await sock.sendMessage(from, { image: { url: MENU_IMAGE } }, { quoted: msg })
+    } catch (e) {
+      console.log("imagen del menú falló:", e?.message || e)
     }
-  } catch (e) {
-    console.log("menú con imagen falló, mandando solo texto:", e?.message || e)
-    await sock.sendMessage(from, { text }, { quoted: msg })
   }
+  await sock.sendMessage(from, { text }, { quoted: msg })
   try {
     await sendMenuInteractive(sock, from, msg, "Tocá el botón para ver todos los comandos 👇", { withImage: false })
   } catch (e) {
