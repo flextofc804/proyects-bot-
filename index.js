@@ -186,7 +186,7 @@ const MENU_IMAGE2 = [
 if (MENU_IMAGE2) {
   console.log(`[MENU] imagen del catálogo encontrada: ${MENU_IMAGE2}`)
 }
-const NSFW_PATTERN = /\b(porno?|porn|xxx|nsfw|hentai|onlyfans|redtube|xvideos|pornhub|sexo|sexual|desnud[ao]s?|nudes?|naked|tetas|culo|culos|vagina|pene|anal|orgia|orgias|erotico|eroticas?|horny|gore|decapitacion|mutilacion|suicidio|violacion|violar|incesto|18\+)\b/
+const NSFW_PATTERN = /\b(porn\w*|xxx|nsfw|hentai|onlyfans|redtube|xvideos|sexo|sexual|desnud[ao]s?|nudes?|naked|tetas|culo|culos|vagina|pene|anal|orgia|orgias|erotico|eroticas?|horny|gore|decapitacion|mutilacion|suicidio|violacion|violar|incesto|puta|putas|puto|putos|masturb\w*|18\+)\b/
 
 function normalizeText(text) {
   return String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")

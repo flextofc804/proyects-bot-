@@ -383,7 +383,7 @@ async function instagramMobile(target, id) {
   return destination
 }
 
-const NSFW_PATTERN = /\b(porno?|porn|xxx|nsfw|hentai|onlyfans|redtube|xvideos|pornhub|sexo|sexual|desnud[ao]s?|nudes?|naked|tetas|culo|culos|vagina|pene|anal|orgia|orgias|erotico|eroticas?|horny|gore|decapitacion|mutilacion|suicidio|violacion|violar|incesto|18\+)\b/
+const NSFW_PATTERN = /\b(porn\w*|xxx|nsfw|hentai|onlyfans|redtube|xvideos|sexo|sexual|desnud[ao]s?|nudes?|naked|tetas|culo|culos|vagina|pene|anal|orgia|orgias|erotico|eroticas?|horny|gore|decapitacion|mutilacion|suicidio|violacion|violar|incesto|puta|putas|puto|putos|masturb\w*|18\+)\b/
 
 function normalizeText(text) {
   return String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -441,23 +441,51 @@ async function tikwmSearch(query, host) {
   return results
 }
 
+function tiktokLinksFromHtml(html) {
+  const found = new Set()
+  for (const m of html.matchAll(/https?:\/\/(?:www\.)?tiktok\.com\/@[\w.\-]+\/video\/\d+/gi)) {
+    found.add(m[0].replace(/[)?.,]+$/, ""))
+  }
+  for (const m of html.matchAll(/[?&]uddg=([^&"'\s]+)/gi)) {
+    try {
+      const decoded = decodeURIComponent(m[1])
+      const hit = decoded.match(/https?:\/\/(?:www\.)?tiktok\.com\/@[\w.\-]+\/video\/\d+/i)
+      if (hit) found.add(hit[0].replace(/[)?.,]+$/, ""))
+    } catch {}
+  }
+  return [...found]
+}
+
 async function webSearchTiktok(query) {
-  const searchUrl = "https://lite.duckduckgo.com/lite/?" + new URLSearchParams({ q: `site:tiktok.com ${query}` })
-  const response = await fetch(searchUrl, {
-    headers: { "user-agent": BROWSER_UA, "accept-language": "es-ES,es;q=0.9" },
-    signal: AbortSignal.timeout(25000)
-  })
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
-  const html = await response.text()
-  const links = [
-    ...new Set(
-      [...html.matchAll(/https?:\/\/(?:www\.)?tiktok\.com\/@[\w.\-]+\/video\/\d+/gi)].map((m) => m[0].replace(/[)?.,]+$/, ""))
-    )
+  const endpoints = [
+    "https://lite.duckduckgo.com/lite/?" + new URLSearchParams({ q: `site:tiktok.com ${query}` }),
+    "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: `site:tiktok.com ${query}` })
   ]
-  return links.slice(0, 8).map((link) => {
-    const handle = link.match(/tiktok\.com\/(@[\w.\-]+)\//i)?.[1] || ""
-    return { title: `video de TikTok ${handle}`, url: link, play: "", cover: "", author: handle, duration: 0 }
-  })
+  let lastStatus = ""
+  for (const searchUrl of endpoints) {
+    try {
+      const response = await fetch(searchUrl, {
+        headers: { "user-agent": BROWSER_UA, "accept-language": "es-ES,es;q=0.9" },
+        signal: AbortSignal.timeout(25000)
+      })
+      if (!response.ok) {
+        lastStatus = `HTTP ${response.status}`
+        continue
+      }
+      const html = await response.text()
+      const links = tiktokLinksFromHtml(html)
+      if (links.length) {
+        return links.slice(0, 8).map((link) => {
+          const handle = link.match(/tiktok\.com\/(@[\w.\-]+)\//i)?.[1] || ""
+          return { title: `video de TikTok ${handle}`, url: link, play: "", cover: "", author: handle, duration: 0 }
+        })
+      }
+      lastStatus = "la pagina no trajo enlaces de TikTok"
+    } catch (e) {
+      lastStatus = String(e?.message || e).slice(0, 120)
+    }
+  }
+  throw new Error(lastStatus || "sin respuesta")
 }
 
 async function tiktokSearch(query) {
@@ -466,17 +494,17 @@ async function tiktokSearch(query) {
     ["tiktok search (espejo)", () => tikwmSearch(query, "https://api.tikwm.com")],
     ["buscador web", () => webSearchTiktok(query)]
   ]
-  let lastError = "sin proveedores"
+  const errors = []
   for (const [name, run] of providers) {
     try {
       const results = await run()
       if (results.length) return results
-      lastError = `${name}: sin resultados`
+      errors.push(`${name}: sin resultados`)
     } catch (e) {
-      lastError = `${name}: ${String(e?.message || e).slice(0, 120)}`
+      errors.push(`${name}: ${String(e?.message || e).slice(0, 120)}`)
     }
   }
-  throw new Error(lastError)
+  throw new Error(errors.join(" | "))
 }
 
 function sendJson(res, status, data) {
