@@ -173,6 +173,7 @@ async function runYtDlp(url, mode, id, client) {
   const args = [
     "--no-playlist", "--no-progress", "--no-warnings", "--no-mtime",
     "--geo-bypass", "--socket-timeout", "20", "--retries", "2",
+    "--concurrent-fragments", "4",
     "-f", formatFor(mode),
     "-o", path.join(root, `api_dl_${id}.%(ext)s`)
   ]
@@ -396,15 +397,15 @@ const server = http.createServer(async (req, res) => {
     })
   } else if (isYouTube) {
     chain = ensurePotServer()
-      .then(() => runYtDlp(target, mode, id))
+      .then(() => runYtDlp(target, mode, id, "tv_embedded"))
       .catch(async (firstError) => {
         const firstMessage = String(firstError?.stderr || firstError?.message || "")
-        if (!/sign in to confirm|not a bot|login_required|403|requested format|needs to be reloaded|no video formats/i.test(firstMessage)) throw firstError
+        if (!/sign in to confirm|not a bot|login_required|403|requested format|needs to be reloaded|no video formats|unplayable/i.test(firstMessage)) throw firstError
         const firstLine = (lines) => (lines.find((l) => l.includes("ERROR")) || lines[0] || "").replace(/^ERROR:\s*/, "").trim().slice(0, 160)
         const errores = [firstLine(firstMessage.split("\n"))]
-        for (const client of ["tv_embedded", "web_embedded", "android_vr", "ios"]) {
+        for (const client of [null, "web_embedded", "android_vr", "ios"]) {
           try {
-            log(`YouTube bloqueó el cliente principal; reintentando con cliente ${client}...`)
+            log(`cliente tv_embedded falló; reintentando con cliente ${client || "default"}...`)
             return await runYtDlp(target, mode, id, client)
           } catch (clientError) {
             errores.push(firstLine(String(clientError?.stderr || clientError?.message || "").split("\n")))

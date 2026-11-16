@@ -2110,7 +2110,7 @@ case "play":
                 `\n\nMotivo técnico: ${reason.slice(0, 200)}`
               )
             } else {
-              await reply("Error al descargar el audio, intentá con otro video")
+              await reply(`Error al descargar el audio, intentá con otro video\n\nMotivo técnico: ${reason.slice(0, 200)}`)
             }
           }
           break
@@ -2140,11 +2140,20 @@ case "video":
     const videoFile = await mediaFile(videoVideoId, "video")
     const videoBuffer = fs.readFileSync(videoFile)
     const videoExt = String(path.extname(videoFile) || "").toLowerCase()
-    await sock.sendMessage(
-      from,
-      { video: videoBuffer, mimetype: videoExt === ".webm" ? "video/webm" : "video/mp4", caption: "ZENITH - Video" },
-      { quoted: msg }
-    )
+    const videoSize = fs.statSync(videoFile).size
+    if (videoSize > 100 * 1024 * 1024) {
+      await sock.sendMessage(
+        from,
+        { document: videoBuffer, mimetype: "video/mp4", fileName: `zenith_video${videoExt}`, caption: "ZENITH - Video pesado enviado como documento" },
+        { quoted: msg }
+      )
+    } else {
+      await sock.sendMessage(
+        from,
+        { video: videoBuffer, mimetype: videoExt === ".webm" ? "video/webm" : "video/mp4", caption: "ZENITH - Video" },
+        { quoted: msg }
+      )
+    }
     removeFile(videoFile)
   } catch (e) {
     const reason = String(e?.message || e)
@@ -2160,7 +2169,7 @@ case "video":
         `\n\nMotivo técnico: ${reason.slice(0, 200)}`
       )
     } else {
-      await reply("Error al descargar el video, intentá con otro")
+      await reply(`Error al descargar el video, intentá con otro\n\nMotivo técnico: ${reason.slice(0, 200)}`)
     }
   }
   break
