@@ -2273,6 +2273,21 @@ case "video":
           }
           try {
             await reply("Descargando de Facebook...")
+            const { customApiInfo, customApiDownloadUrl } = await import("./youtube.js")
+            let fbApiFile = null
+            if (customApiInfo()) {
+              try {
+                fbApiFile = await customApiDownloadUrl(text, "video", `zenith_facebook_${Date.now()}`)
+              } catch (fbApiError) {
+                console.log("API propia facebook falló:", fbApiError?.message || fbApiError)
+              }
+            }
+            if (fbApiFile) {
+              const fbBuffer = fs.readFileSync(fbApiFile)
+              await sock.sendMessage(from, { video: fbBuffer, mimetype: "video/mp4" }, { quoted: msg })
+              removeFile(fbApiFile)
+              break
+            }
             const fbRes = await axios.get(text, { headers: { "User-Agent": "Mozilla/5.0" } })
             const videoMatch = fbRes.data.match(/"video":{"url":"([^"]+)"/) || fbRes.data.match(/"video_url":"([^"]+)"/)
             if (videoMatch) {
@@ -2345,6 +2360,18 @@ case "video":
           }
           try {
             await reply("Descargando de Twitter/X...")
+            const { customApiInfo, customApiDownloadUrl } = await import("./youtube.js")
+            if (customApiInfo() && /https?:\/\//i.test(text)) {
+              try {
+                const twApiFile = await customApiDownloadUrl(text, "video", `zenith_twitter_${Date.now()}`)
+                const twBuffer = fs.readFileSync(twApiFile)
+                await sock.sendMessage(from, { video: twBuffer, mimetype: "video/mp4" }, { quoted: msg })
+                removeFile(twApiFile)
+                break
+              } catch (twApiError) {
+                console.log("API propia twitter falló:", twApiError?.message || twApiError)
+              }
+            }
             const tweetId = (text.match(/status\/(\d+)/) || [])[1] || (text.match(/^\d+$/) || [])[0]
             if (!tweetId) {
               await reply("No pude leer el ID del tweet. Pasá el link completo.")
