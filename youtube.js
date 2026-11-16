@@ -826,7 +826,7 @@ async function ytDlpAttempt(binary, kind, videoId, filePrefix, output, cookies, 
   if (client) parts.push(`--extractor-args "youtube:player_client=${client}"`)
   if (cookies) parts.push(cookies)
   if (ffmpegFlag) parts.push(ffmpegFlag)
-  parts.push("--no-playlist --no-progress --no-warnings --geo-bypass --no-mtime --retries 2 --fragment-retries 2 --socket-timeout 20")
+  parts.push("--no-playlist --no-progress --no-warnings --geo-bypass --no-mtime --retries 2 --fragment-retries 2 --socket-timeout 20 --concurrent-fragments 4")
   parts.push(`-o "${output}" "https://www.youtube.com/watch?v=${videoId}"`)
   await execAsync(parts.join(" "), { timeout: 300000, maxBuffer: 1024 * 1024 * 16 })
   const nameMatch = fs
