@@ -474,8 +474,7 @@ function renderMenuEverything() {
 }
 
 async function enviarTextoMenu(sock, from, msg, text, withImage = false) {
-  await startTyping(sock, from)
-  await sleep(400 + Math.floor(Math.random() * 500))
+  startTyping(sock, from).catch(() => {})
   if (withImage && MENU_IMAGE2) {
     try {
       await sock.sendMessage(from, { image: { url: MENU_IMAGE2 } }, { quoted: msg })
@@ -484,7 +483,7 @@ async function enviarTextoMenu(sock, from, msg, text, withImage = false) {
     }
   }
   await sock.sendMessage(from, { text }, { quoted: msg })
-  await stopTyping(sock, from)
+  stopTyping(sock, from).catch(() => {})
 }
 
 function renderMenuListRows() {
@@ -564,8 +563,7 @@ async function sendMenuInteractive(sock, from, msg, menuText, opts = {}) {
 
 async function enviarMenuPrincipal(sock, from, msg) {
   const text = renderMenuHome()
-  await startTyping(sock, from)
-  await sleep(350 + Math.floor(Math.random() * 400))
+  startTyping(sock, from).catch(() => {})
   try {
     if (MENU_IMAGE) {
       await sock.sendMessage(from, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
@@ -596,7 +594,7 @@ async function enviarMenuPrincipal(sock, from, msg) {
       console.log("botón de menú no soportado por este WhatsApp:", e2?.message || e2)
     }
   }
-  await stopTyping(sock, from)
+  stopTyping(sock, from).catch(() => {})
 }
 
 async function enviarMenuVisual(sock, from, msg, category = null) {
@@ -690,6 +688,20 @@ function jidInVariants(pid, variants) {
   return false
 }
 
+const groupMetaCache = new Map()
+
+async function getGroupMeta(sock, from) {
+  const hit = groupMetaCache.get(from)
+  if (hit && Date.now() - hit.t < 60000) return hit.meta
+  const meta = await sock.groupMetadata(from)
+  groupMetaCache.set(from, { meta, t: Date.now() })
+  if (groupMetaCache.size > 200) {
+    const oldest = [...groupMetaCache.entries()].sort((a, b) => a[1].t - b[1].t)[0]
+    if (oldest) groupMetaCache.delete(oldest[0])
+  }
+  return meta
+}
+
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(config.sessionName)
   const { version } = await fetchLatestBaileysVersion()
@@ -767,17 +779,15 @@ async function startBot() {
     const mentioned = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || []
 
     const reply = async (text) => {
-      await startTyping(sock, from)
-      await sleep(350 + Math.floor(Math.random() * 450))
+      startTyping(sock, from).catch(() => {})
       await sock.sendMessage(from, { text }, { quoted: msg })
-      await stopTyping(sock, from)
+      stopTyping(sock, from).catch(() => {})
     }
 
     const replyWithMention = async (text, mentions) => {
-      await startTyping(sock, from)
-      await sleep(350 + Math.floor(Math.random() * 450))
+      startTyping(sock, from).catch(() => {})
       await sock.sendMessage(from, { text, mentions }, { quoted: msg })
-      await stopTyping(sock, from)
+      stopTyping(sock, from).catch(() => {})
     }
 
     const cleanOwnerNum = config.ownerNumber.replace(/[^0-9]/g, "")
@@ -798,7 +808,7 @@ async function startBot() {
       if (isOwner) return true
       if (!isGroup) return false
       try {
-        const groupMetadata = await sock.groupMetadata(from)
+        const groupMetadata = await getGroupMeta(sock, from)
         const participant = groupMetadata.participants.find(p => jidInVariants(p.id, senderVariants))
         return participant?.admin === "admin" || participant?.admin === "superadmin"
       } catch {
@@ -809,7 +819,7 @@ async function startBot() {
     const isBotAdmin = async () => {
       if (!isGroup) return false
       try {
-        const groupMetadata = await sock.groupMetadata(from)
+        const groupMetadata = await getGroupMeta(sock, from)
         const botParticipant = groupMetadata.participants.find(p => jidInVariants(p.id, botVariants))
         return botParticipant?.admin === "admin" || botParticipant?.admin === "superadmin"
       } catch {
@@ -2519,7 +2529,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          const groupMeta = await sock.groupMetadata(from)
+          const groupMeta = await getGroupMeta(sock, from)
           await reply(`${panel(`INFO GRUPO`, `> Nombre: ${groupMeta.subject}\n> Miembros: ${groupMeta.participants.length}\n> Creado: ${new Date(groupMeta.creation * 1000).toLocaleDateString()}\n> Descripción: ${groupMeta.desc || "Sin descripción"}`)}`)
           break
 
@@ -3073,7 +3083,7 @@ case "video":
             return
           }
           if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
-          const metaGroup = await sock.groupMetadata(from)
+          const metaGroup = await getGroupMeta(sock, from)
           const allParticipants = metaGroup.participants.map(p => p.id)
           const tagText = text || "Mención a todos"
           await sock.sendMessage(from, { text: tagText, mentions: allParticipants })
@@ -3378,7 +3388,7 @@ case "video":
     if (linkRegex.test(body)) {
       const sender = msg.key.participant || msg.key.remoteJid
       try {
-        const meta = await sock.groupMetadata(from)
+        const meta = await getGroupMeta(sock, from)
         const antilinkBotVariants = jidVariantSet([sock.user?.id, sock.user?.lid])
         const antilinkSenderVariants = jidVariantSet([msg.key.participant, msg.key.participantAlt, msg.key.participantPn, sender])
         const isBotAdmin = meta.participants.find(p => jidInVariants(p.id, antilinkBotVariants))?.admin
