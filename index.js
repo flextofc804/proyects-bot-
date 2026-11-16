@@ -170,6 +170,22 @@ if (MENU_IMAGE) {
 } else {
   console.log("[MENU] sin imagen: subí menu.jpg a la carpeta del bot para que el menú salga con imagen")
 }
+
+const MENU_IMAGE2 = [
+  "menu2.png",
+  "menu2.jpg",
+  "menu2.jpeg"
+]
+  .flatMap((name) => [
+    path.join(process.cwd(), name),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), name),
+    path.join("/home/container", name)
+  ])
+  .find((p) => fs.existsSync(p)) || ""
+
+if (MENU_IMAGE2) {
+  console.log(`[MENU] imagen del catálogo encontrada: ${MENU_IMAGE2}`)
+}
 const searchHistory = new Map()
 
 const config = {
@@ -883,9 +899,16 @@ function renderMenuEverything() {
   return lines.join("\n")
 }
 
-async function enviarTextoMenu(sock, from, msg, text) {
+async function enviarTextoMenu(sock, from, msg, text, withImage = false) {
   await startTyping(sock, from)
   await sleep(400 + Math.floor(Math.random() * 500))
+  if (withImage && MENU_IMAGE2) {
+    try {
+      await sock.sendMessage(from, { image: { url: MENU_IMAGE2 } }, { quoted: msg })
+    } catch (e) {
+      console.log("imagen del catálogo falló:", e?.message || e)
+    }
+  }
   await sock.sendMessage(from, { text }, { quoted: msg })
   await stopTyping(sock, from)
 }
@@ -1012,7 +1035,7 @@ async function enviarMenuVisual(sock, from, msg, category = null) {
   }
 
   if (["todos", "todo", "all", "completo", "catalogo", "full"].includes(normalized)) {
-    await enviarTextoMenu(sock, from, msg, renderMenuEverything())
+    await enviarTextoMenu(sock, from, msg, renderMenuEverything(), true)
     return
   }
 
