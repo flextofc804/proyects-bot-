@@ -135,7 +135,7 @@ function ensureYtDlp() {
 }
 
 function formatFor(mode) {
-  if (mode === "audio") return "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best"
+  if (mode === "audio") return "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best[vcodec=none]/best[acodec!=none][vcodec=none]"
   return "best[ext=mp4][height<=720]/best[height<=720]/best"
 }
 
