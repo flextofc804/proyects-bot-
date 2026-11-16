@@ -212,7 +212,7 @@ const server = http.createServer(async (req, res) => {
   runYtDlp(target, mode, id)
     .then((file) => {
       if (!file) {
-        sendJson(res, 502, { error: "yt-dlp no generó archivo" })
+        sendJson(res, 200, { ok: false, error: "yt-dlp no generó archivo" })
         return
       }
       const size = fs.statSync(file).size
@@ -232,7 +232,7 @@ const server = http.createServer(async (req, res) => {
       cleanDownloads(id)
       const stderr = String(e?.stderr || e?.message || e).trim().split("\n").filter(Boolean).pop() || "error desconocido"
       log(`falló: ${stderr.slice(0, 200)}`)
-      sendJson(res, 502, { error: stderr.slice(0, 300) })
+      sendJson(res, 200, { ok: false, error: stderr.slice(0, 300) })
     })
 })
 
