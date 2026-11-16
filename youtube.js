@@ -893,11 +893,11 @@ async function downloadApiFile(url, destination, kind) {
   return finalPath
 }
 
-async function customApiDownload(videoId, kind, prefix) {
+async function customApiDownloadUrl(targetUrl, kind, prefix) {
   const api = customApiInfo()
   if (!api) throw new Error("no configurada")
   const params = new URLSearchParams({
-    url: `https://www.youtube.com/watch?v=${videoId}`,
+    url: targetUrl,
     mode: kind === "audio" ? "audio" : "video"
   })
   if (api.key) params.set("key", api.key)
@@ -909,6 +909,10 @@ async function customApiDownload(videoId, kind, prefix) {
   }
   removeFile(file)
   throw new Error("archivo vacío")
+}
+
+async function customApiDownload(videoId, kind, prefix) {
+  return customApiDownloadUrl(`https://www.youtube.com/watch?v=${videoId}`, kind, prefix)
 }
 
 async function cobaltDownload(videoId, kind, prefix) {
@@ -1352,7 +1356,9 @@ export {
   mediaFile,
   patchPlayDl,
   patchedSearch,
-  patchedStream
+  patchedStream,
+  customApiInfo,
+  customApiDownloadUrl
 }
 
 log(`cookies: ${readCookiesHeader() ? "sí" : "no (subí cookies.txt si YouTube bloquea la IP del servidor)"}`)
