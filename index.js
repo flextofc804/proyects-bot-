@@ -186,6 +186,18 @@ const MENU_IMAGE2 = [
 if (MENU_IMAGE2) {
   console.log(`[MENU] imagen del catálogo encontrada: ${MENU_IMAGE2}`)
 }
+const NSFW_PATTERN = /\b(porno?|porn|xxx|nsfw|hentai|onlyfans|redtube|xvideos|pornhub|sexo|sexual|desnud[ao]s?|nudes?|naked|tetas|culo|culos|vagina|pene|anal|orgia|orgias|erotico|eroticas?|horny|gore|decapitacion|mutilacion|suicidio|violacion|violar|incesto|18\+)\b/
+
+function normalizeText(text) {
+  return String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+}
+
+function isNsfwText(text) {
+  return NSFW_PATTERN.test(normalizeText(text))
+}
+
+const ttSearchCooldown = new Map()
+
 const searchHistory = new Map()
 
 const config = {
@@ -1290,6 +1302,64 @@ async function startBot() {
         case "comandos":
           await enviarMenuVisual(sock, from, msg, text)
           break
+
+        case "ttsearch":
+        case "tiktoksearch": {
+          const query = text.trim().slice(0, 100)
+          if (!query) {
+            await reply("🔍 Escribí qué querés buscar:\n#ttsearch gatos graciosos")
+            break
+          }
+          if (isNsfwText(query)) {
+            await reply("⚠️ No puedo buscar contenido +18, explícito o violento. Probá con otra búsqueda.")
+            break
+          }
+          const nowTs = Date.now()
+          if (nowTs - (ttSearchCooldown.get(from) || 0) < 8000) {
+            await reply("⏳ Esperá unos segundos entre búsquedas.")
+            break
+          }
+          ttSearchCooldown.set(from, nowTs)
+          const { customApiInfo } = await import("./youtube.js")
+          const api = customApiInfo()
+          if (!api) {
+            await reply("⚙️ Para usar #ttsearch necesitás tu API propia: subí el archivo api-propia.txt con la URL de tu API y su clave.")
+            break
+          }
+          await reply(`🔍 Buscando en TikTok: "${query}"...`)
+          try {
+            const params = new URLSearchParams({ q: query })
+            if (api.key) params.set("key", api.key)
+            const response = await fetch(`${api.base}/search?${params.toString()}`, {
+              headers: { "bypass-tunnel-reminder": "1" },
+              signal: AbortSignal.timeout(120000)
+            })
+            const data = await response.json().catch(() => null)
+            if (!data || data.ok === false) {
+              const motivo = data?.nsfw ? "la búsqueda fue bloqueada por contenido no permitido" : data?.error || "sin respuesta de la API"
+              await reply(`⚠️ No pude completar la búsqueda.\nMotivo técnico: ${motivo}`)
+              break
+            }
+            const results = (data.results || []).slice(0, 5)
+            if (!results.length) {
+              await reply(`😶 No encontré videos de TikTok para "${query}". Probá con otras palabras.`)
+              break
+            }
+            const lines = [`🔍 *TikTok · búsqueda:* "${query}"`, ""]
+            results.forEach((r, i) => {
+              lines.push(`*${i + 1}.* ${String(r.title || "").slice(0, 180)}`)
+              if (r.author) lines.push(`👤 ${r.author}${r.duration ? ` · ⏱ ${r.duration}s` : ""}`)
+              lines.push(`🔗 ${r.url}`)
+              lines.push("")
+            })
+            lines.push("💡 Para descargar alguno, copiá su enlace y usá #tiktok <enlace>")
+            await reply(lines.join("\n").trim())
+          } catch (e) {
+            await reply(`⚠️ La búsqueda falló.\nMotivo técnico: ${String(e?.message || e).slice(0, 180)}`)
+          }
+          break
+        }
+
 
         case "balance":
         case "bal":

@@ -383,6 +383,102 @@ async function instagramMobile(target, id) {
   return destination
 }
 
+const NSFW_PATTERN = /\b(porno?|porn|xxx|nsfw|hentai|onlyfans|redtube|xvideos|pornhub|sexo|sexual|desnud[ao]s?|nudes?|naked|tetas|culo|culos|vagina|pene|anal|orgia|orgias|erotico|eroticas?|horny|gore|decapitacion|mutilacion|suicidio|violacion|violar|incesto|18\+)\b/
+
+function normalizeText(text) {
+  return String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+}
+
+function isNsfw(text) {
+  return NSFW_PATTERN.test(normalizeText(text))
+}
+
+const searchRate = new Map()
+
+function absolutizeTikwmUrl(url) {
+  if (!url) return ""
+  if (url.startsWith("//")) return "https:" + url
+  if (url.startsWith("/")) return "https://www.tikwm.com" + url
+  return url
+}
+
+function tiktokLinkFrom(item) {
+  const author = item?.author?.unique_id || item?.author?.uniqueId || ""
+  const id = item?.video_id || item?.aweme_id || item?.id || ""
+  if (author && id) return `https://www.tiktok.com/@${author}/video/${id}`
+  const candidate = item?.web_url || item?.url || ""
+  if (/^https?:\/\/([a-z0-9-]+\.)*tiktok\.com\//i.test(candidate)) return candidate
+  return ""
+}
+
+async function tikwmSearch(query, host) {
+  const url = `${host}/api/feed/search?` + new URLSearchParams({ keywords: query, count: "12" })
+  const response = await fetch(url, {
+    headers: { "user-agent": BROWSER_UA, accept: "application/json" },
+    signal: AbortSignal.timeout(25000)
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const body = await response.json()
+  if (body?.code !== 0 || !Array.isArray(body?.data?.videos)) throw new Error(body?.msg || "el proveedor no devolvio videos")
+  const results = []
+  const seen = new Set()
+  for (const item of body.data.videos) {
+    const link = tiktokLinkFrom(item)
+    if (!link || seen.has(link)) continue
+    const title = String(item?.title || "").replace(/\s+/g, " ").trim()
+    if (isNsfw(title) || isNsfw(item?.author?.nickname || "")) continue
+    seen.add(link)
+    const tags = (title.match(/#[\p{L}\p{N}_]+/gu) || []).slice(0, 5)
+    results.push({
+      title: title || (tags.length ? tags.join(" ") : "video de TikTok"),
+      url: link,
+      play: absolutizeTikwmUrl(item?.play),
+      cover: absolutizeTikwmUrl(item?.origin_cover || item?.cover),
+      author: item?.author?.nickname || ("@" + (item?.author?.unique_id || "")),
+      duration: Number(item?.duration) || 0
+    })
+  }
+  return results
+}
+
+async function webSearchTiktok(query) {
+  const searchUrl = "https://lite.duckduckgo.com/lite/?" + new URLSearchParams({ q: `site:tiktok.com ${query}` })
+  const response = await fetch(searchUrl, {
+    headers: { "user-agent": BROWSER_UA, "accept-language": "es-ES,es;q=0.9" },
+    signal: AbortSignal.timeout(25000)
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const html = await response.text()
+  const links = [
+    ...new Set(
+      [...html.matchAll(/https?:\/\/(?:www\.)?tiktok\.com\/@[\w.\-]+\/video\/\d+/gi)].map((m) => m[0].replace(/[)?.,]+$/, ""))
+    )
+  ]
+  return links.slice(0, 8).map((link) => {
+    const handle = link.match(/tiktok\.com\/(@[\w.\-]+)\//i)?.[1] || ""
+    return { title: `video de TikTok ${handle}`, url: link, play: "", cover: "", author: handle, duration: 0 }
+  })
+}
+
+async function tiktokSearch(query) {
+  const providers = [
+    ["tiktok search", () => tikwmSearch(query, "https://www.tikwm.com")],
+    ["tiktok search (espejo)", () => tikwmSearch(query, "https://api.tikwm.com")],
+    ["buscador web", () => webSearchTiktok(query)]
+  ]
+  let lastError = "sin proveedores"
+  for (const [name, run] of providers) {
+    try {
+      const results = await run()
+      if (results.length) return results
+      lastError = `${name}: sin resultados`
+    } catch (e) {
+      lastError = `${name}: ${String(e?.message || e).slice(0, 120)}`
+    }
+  }
+  throw new Error(lastError)
+}
+
 function sendJson(res, status, data) {
   const body = JSON.stringify(data)
   res.writeHead(status, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) })
@@ -401,6 +497,45 @@ const server = http.createServer(async (req, res) => {
   if (parsed.pathname === "/health") {
     const ytDlpReady = fs.existsSync(binaryPath) || (await findSystemYtDlp())
     sendJson(res, 200, { ok: true, ytDlp: ytDlpReady, clave: !!getClave(), pot: await pingPotServer() })
+    return
+  }
+
+  if (parsed.pathname === "/search") {
+    const clave = getClave()
+    if (clave && parsed.searchParams.get("key") !== clave) {
+      sendJson(res, 403, { error: "clave incorrecta" })
+      return
+    }
+    const now = Date.now()
+    const rateKey = clave || "anon"
+    if (now - (searchRate.get(rateKey) || 0) < 4000) {
+      sendJson(res, 200, { ok: false, error: "esper\u00e1 unos segundos entre b\u00fasquedas" })
+      return
+    }
+    searchRate.set(rateKey, now)
+    const query = (parsed.searchParams.get("q") || parsed.searchParams.get("keywords") || "").trim().slice(0, 100)
+    if (!query) {
+      sendJson(res, 200, { ok: false, error: "falta la b\u00fasqueda (?q=)" })
+      return
+    }
+    if (isNsfw(query)) {
+      log("b\u00fasqueda bloqueada por contenido no permitido")
+      sendJson(res, 200, { ok: false, nsfw: true, error: "no puedo buscar contenido +18 o expl\u00edcito" })
+      return
+    }
+    log(`b\u00fasqueda TikTok: ${query}`)
+    tiktokSearch(query)
+      .then((results) => {
+        const safe = results.filter((r) => !isNsfw(r.title) && !isNsfw(r.author)).slice(0, 5)
+        if (!safe.length) {
+          sendJson(res, 200, { ok: false, error: "sin resultados" })
+          return
+        }
+        sendJson(res, 200, { ok: true, query, results: safe })
+      })
+      .catch((e) => {
+        sendJson(res, 200, { ok: false, error: String(e?.message || e).slice(0, 300) })
+      })
     return
   }
 
