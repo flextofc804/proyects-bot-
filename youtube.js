@@ -802,8 +802,27 @@ async function setupPotProvider() {
   return potSetupPromise.current
 }
 
+let jsRuntimeFlagPromise = null
+
+function jsRuntimeFlag(binary) {
+  if (!jsRuntimeFlagPromise) {
+    jsRuntimeFlagPromise = (async () => {
+      const flag = `--js-runtimes "node:${process.execPath}"`
+      try {
+        await execAsync(`"${binary}" ${flag} --version`, { timeout: 30000 })
+        return flag
+      } catch {
+        return ""
+      }
+    })()
+  }
+  return jsRuntimeFlagPromise
+}
+
 async function ytDlpAttempt(binary, kind, videoId, filePrefix, output, cookies, ffmpegFlag, client) {
   const parts = [`"${binary}"`, formatFor(kind)]
+  const jsFlag = await jsRuntimeFlag(binary)
+  if (jsFlag) parts.push(jsFlag)
   if (client) parts.push(`--extractor-args "youtube:player_client=${client}"`)
   if (cookies) parts.push(cookies)
   if (ffmpegFlag) parts.push(ffmpegFlag)
