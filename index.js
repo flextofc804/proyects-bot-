@@ -16,6 +16,7 @@ import { fileURLToPath } from "url"
 import axios from "axios"
 import play from 'play-dl'
 import ffmpeg from 'ffmpeg-static'
+import { menuOrder, menuAliases, menuCategories } from "./menus.js"
 const execAsync = promisify(exec)
 
 let sharpLib
@@ -187,6 +188,17 @@ if (MENU_IMAGE2) {
   console.log(`[MENU] imagen del catálogo encontrada: ${MENU_IMAGE2}`)
 }
 const NSFW_PATTERN = /\b(porn\w*|xxx|nsfw|hentai|onlyfans|redtube|xvideos|sexo|sexual|desnud[ao]s?|nudes?|naked|tetas|culo|culos|vagina|pene|anal|orgia|orgias|erotico|eroticas?|horny|gore|decapitacion|mutilacion|suicidio|violacion|violar|incesto|puta|putas|puto|putos|masturb\w*|18\+)\b/
+
+const PANEL_TOP = "╔" + "═".repeat(20) + "╗\n  ⚡ ZENITH - BOT ⚡\n╚" + "═".repeat(20) + "╝"
+const PANEL_FOOTER = "└" + "─".repeat(15) + "┘"
+
+function panelStart(title, body) {
+  return PANEL_TOP + "\n\n┌─ ◆ " + title + " ◆ ─┐\n" + body
+}
+
+function panel(title, body) {
+  return panelStart(title, body) + "\n" + PANEL_FOOTER
+}
 
 function normalizeText(text) {
   return String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -377,456 +389,6 @@ function getRarityColor(rarity) {
   return colors[rarity] || "⚪"
 }
 
-const menuOrder = ["economia", "stickers", "gacha", "descargas", "perfil", "subbots", "utilidades", "admin", "reacciones", "uno", "anime"]
-
-const menuAliases = {
-  economia: "economia",
-  economy: "economia",
-  eco: "economia",
-  sticker: "stickers",
-  stickers: "stickers",
-  gacha: "gacha",
-  descargas: "descargas",
-  descarga: "descargas",
-  descargar: "descargas",
-  downloads: "descargas",
-  perfil: "perfil",
-  profile: "perfil",
-  subbots: "subbots",
-  "sub-bots": "subbots",
-  "sub-bot": "subbots",
-  "sub bots": "subbots",
-  subbot: "subbots",
-  utilidades: "utilidades",
-  utilidad: "utilidades",
-  utils: "utilidades",
-  admin: "admin",
-  administracion: "admin",
-  reacciones: "reacciones",
-  reaccion: "reacciones",
-  acciones: "reacciones",
-  uno: "uno",
-  anime: "anime"
-}
-
-const menuCategories = {
-  economia: {
-    emoji: "💰",
-    title: "ECONOMÍA",
-    sections: [
-      {
-        title: "💵 GANANCIAS",
-        items: [
-          { cmd: "daily", desc: "recompensa cada 24 h" },
-          { cmd: "work", desc: "trabajar cada hora" },
-          { cmd: "crime", desc: "cometer un crimen" },
-          { cmd: "slut", desc: "trabajo sexual" }
-        ]
-      },
-      {
-        title: "🎲 APUESTAS",
-        items: [
-          { cmd: "coinflip", desc: "apostar cara o cruz" },
-          { cmd: "roulette", desc: "ruleta rojo / negro / verde" }
-        ]
-      },
-      {
-        title: "🏦 BANCO Y COINS",
-        items: [
-          { cmd: "balance", desc: "ver tus coins y tu banco" },
-          { cmd: "deposit", desc: "guardar coins en el banco" },
-          { cmd: "withdraw", desc: "sacar coins del banco" },
-          { cmd: "givecoins", desc: "dar coins a alguien" }
-        ]
-      },
-      {
-        title: "📊 RANKING E INFO",
-        items: [
-          { cmd: "economyboard", desc: "ranking de economía" },
-          { cmd: "economyinfo", desc: "cómo funciona la economía" }
-        ]
-      }
-    ]
-  },
-  stickers: {
-    emoji: "🎨",
-    title: "STICKERS",
-    sections: [
-      {
-        title: "🖌️ CREAR",
-        items: [
-          { cmd: "sticker", desc: "imagen o video a sticker" },
-          { cmd: "newpack", desc: "crear un pack nuevo" },
-          { cmd: "stickeradd", desc: "añadir sticker a un pack" },
-          { cmd: "stickerdel", desc: "quitar sticker de un pack" }
-        ]
-      },
-      {
-        title: "📦 PACKS",
-        items: [
-          { cmd: "stickerpacks", desc: "ver tus packs" },
-          { cmd: "getpack", desc: "ver un pack completo" },
-          { cmd: "delpack", desc: "borrar un pack" }
-        ]
-      },
-      {
-        title: "⚙️ AJUSTES",
-        items: [
-          { cmd: "setstickermeta", desc: "metadata del sticker" },
-          { cmd: "delstickermeta", desc: "borrar metadata" },
-          { cmd: "setstickerpackdesc", desc: "descripción del pack" },
-          { cmd: "setpackprivate", desc: "pack privado" },
-          { cmd: "setpackpublic", desc: "pack público" },
-          { cmd: "packfavourite", desc: "marcar pack favorito" },
-          { cmd: "packunfavourite", desc: "quitar de favoritos" }
-        ]
-      }
-    ]
-  },
-  gacha: {
-    emoji: "🎴",
-    title: "GACHA",
-    sections: [
-      {
-        title: "🎰 JUGAR",
-        items: [
-          { cmd: "rollwaifu", desc: "tirar el gacha" },
-          { cmd: "claim", desc: "reclamar el personaje" },
-          { cmd: "harem", desc: "ver tu colección" }
-        ]
-      },
-      {
-        title: "🛒 TIENDA Y TRUEQUES",
-        items: [
-          { cmd: "haremshop", desc: "tienda de personajes" },
-          { cmd: "buycharacter", desc: "comprar un personaje" },
-          { cmd: "sell", desc: "vender un personaje" },
-          { cmd: "trade", desc: "intercambiar personajes" },
-          { cmd: "vote", desc: "votar por alguien" }
-        ]
-      },
-      {
-        title: "📖 INFORMACIÓN",
-        items: [
-          { cmd: "charinfo", desc: "info de un personaje" },
-          { cmd: "charimage", desc: "imagen del personaje" },
-          { cmd: "charvideo", desc: "video del personaje" },
-          { cmd: "serieinfo", desc: "info de una serie" },
-          { cmd: "serielist", desc: "lista de series" },
-          { cmd: "gachainfo", desc: "cómo funciona el gacha" }
-        ]
-      },
-      {
-        title: "🏆 RANKINGS",
-        items: [
-          { cmd: "waifusboard", desc: "ranking de harenes" },
-          { cmd: "favoritetop", desc: "top de favoritos" }
-        ]
-      },
-      {
-        title: "👑 SOLO OWNER",
-        items: [
-          { cmd: "givechar", desc: "dar un personaje" },
-          { cmd: "giveallharem", desc: "dar el harem completo" },
-          { cmd: "deletewaifu", desc: "borrar un personaje" },
-          { cmd: "setclaimmsg", desc: "mensaje de reclamo" },
-          { cmd: "delclaimmsg", desc: "borrar mensaje de reclamo" }
-        ]
-      }
-    ]
-  },
-  descargas: {
-    emoji: "📥",
-    title: "DESCARGAS",
-    sections: [
-      {
-        title: "🎬 YOUTUBE",
-        items: [
-          { cmd: "play", desc: "audio de YouTube" },
-          { cmd: "mp4", desc: "video de YouTube" },
-          { cmd: "ytsearch", desc: "buscar en YouTube" }
-        ]
-      },
-      {
-        title: "🌐 REDES SOCIALES",
-        items: [
-          { cmd: "tiktok", desc: "descargar de TikTok" },
-          { cmd: "facebook", desc: "descargar de Facebook" },
-          { cmd: "instagram", desc: "descargar de Instagram" },
-          { cmd: "twitter", desc: "descargar de Twitter / X" },
-          { cmd: "pinterest", desc: "buscar en Pinterest" }
-        ]
-      },
-      {
-        title: "📁 ARCHIVOS",
-        items: [
-          { cmd: "mediafire", desc: "descargar de MediaFire" },
-          { cmd: "pixiv", desc: "buscar en Pixiv" }
-        ]
-      }
-    ]
-  },
-  perfil: {
-    emoji: "👤",
-    title: "PERFIL",
-    sections: [
-      {
-        title: "🪪 TU PERFIL",
-        items: [
-          { cmd: "profile", desc: "ver tu perfil" },
-          { cmd: "level", desc: "ver tu nivel y XP" },
-          { cmd: "leaderboard", desc: "ranking de niveles" }
-        ]
-      },
-      {
-        title: "💍 MATRIMONIO",
-        items: [
-          { cmd: "marry", desc: "casarte con alguien" },
-          { cmd: "divorce", desc: "divorciarte" },
-          { cmd: "marryhistory", desc: "historial de parejas" }
-        ]
-      },
-      {
-        title: "✏️ PERSONALIZAR",
-        items: [
-          { cmd: "setdescription", desc: "cambiar tu descripción" },
-          { cmd: "setbirth", desc: "tu cumpleaños" },
-          { cmd: "setgenre", desc: "tu género" },
-          { cmd: "setfavourite", desc: "tu personaje favorito" }
-        ]
-      },
-      {
-        title: "🎂 CUMPLEAÑOS Y DATOS",
-        items: [
-          { cmd: "birthdays", desc: "cumpleaños del grupo" },
-          { cmd: "allbirthdays", desc: "todos los cumpleaños" },
-          { cmd: "delbirth", desc: "borrar tu cumpleaños" },
-          { cmd: "delfavourite", desc: "borrar favorito" },
-          { cmd: "delgenre", desc: "borrar género" }
-        ]
-      },
-      {
-        title: "🏘️ GRUPO",
-        items: [
-          { cmd: "group", desc: "info del grupo" }
-        ]
-      }
-    ]
-  },
-  subbots: {
-    emoji: "🤖",
-    title: "SUB-BOTS",
-    sections: [
-      {
-        title: "🔑 ACCESO",
-        items: [
-          { cmd: "qr", desc: "código QR" },
-          { cmd: "code", desc: "código de pairing" },
-          { cmd: "premium", desc: "info premium" },
-          { cmd: "botinfo", desc: "info del bot" }
-        ]
-      },
-      {
-        title: "🚪 GRUPOS",
-        items: [
-          { cmd: "join", desc: "unirse a un grupo" },
-          { cmd: "leave", desc: "salir del grupo" },
-          { cmd: "autojoin", desc: "auto unirse" }
-        ]
-      },
-      {
-        title: "⚙️ AJUSTES DEL BOT",
-        items: [
-          { cmd: "reload", desc: "recargar la base de datos" },
-          { cmd: "setname", desc: "nombre del bot" },
-          { cmd: "setpfp", desc: "foto de perfil" },
-          { cmd: "setstatus", desc: "estado del bot" },
-          { cmd: "setusername", desc: "usuario del bot" },
-          { cmd: "setbanner", desc: "banner del menú" },
-          { cmd: "setbotcurrency", desc: "moneda del bot" },
-          { cmd: "setbotowner", desc: "dueño del bot" }
-        ]
-      },
-      {
-        title: "🔐 SESIÓN",
-        items: [
-          { cmd: "logout", desc: "cerrar sesión" }
-        ]
-      }
-    ]
-  },
-  utilidades: {
-    emoji: "🧰",
-    title: "UTILIDADES",
-    sections: [
-      {
-        title: "⚡ SISTEMA",
-        items: [
-          { cmd: "ping", desc: "velocidad de respuesta" },
-          { cmd: "status", desc: "estado y uptime" },
-          { cmd: "bots", desc: "bots activos" }
-        ]
-      },
-      {
-        title: "🛠️ HERRAMIENTAS",
-        items: [
-          { cmd: "del", desc: "borrar un mensaje" },
-          { cmd: "getpic", desc: "foto de perfil" },
-          { cmd: "toimage", desc: "sticker a imagen" },
-          { cmd: "invite", desc: "link de invitación" }
-        ]
-      },
-      {
-        title: "📮 OTROS",
-        items: [
-          { cmd: "setlang", desc: "cambiar idioma" },
-          { cmd: "suggest", desc: "mandar una sugerencia" },
-          { cmd: "testwelcome", desc: "probar la bienvenida" }
-        ]
-      }
-    ]
-  },
-  admin: {
-    emoji: "🛡️",
-    title: "ADMIN",
-    sections: [
-      {
-        title: "⚠️ MODERACIÓN",
-        items: [
-          { cmd: "warn", desc: "advertir a alguien" },
-          { cmd: "warns", desc: "ver los warns" },
-          { cmd: "delwarn", desc: "quitar warns" },
-          { cmd: "setwarnlimit", desc: "límite de warns" }
-        ]
-      },
-      {
-        title: "👥 MIEMBROS",
-        items: [
-          { cmd: "kick", desc: "expulsar del grupo" },
-          { cmd: "promote", desc: "ascender a admin" },
-          { cmd: "demote", desc: "quitar admin" },
-          { cmd: "tag", desc: "mencionar a todos" }
-        ]
-      },
-      {
-        title: "🔓 GRUPO",
-        items: [
-          { cmd: "open", desc: "abrir el grupo" },
-          { cmd: "close", desc: "cerrar el grupo" },
-          { cmd: "antilink", desc: "anti enlaces" },
-          { cmd: "onlyadmin", desc: "solo admins escriben" }
-        ]
-      },
-      {
-        title: "👋 BIENVENIDAS",
-        items: [
-          { cmd: "welcome", desc: "activar bienvenida" },
-          { cmd: "goodbye", desc: "activar despedida" },
-          { cmd: "setwelcome", desc: "mensaje de bienvenida" },
-          { cmd: "setgoodbye", desc: "mensaje de despedida" },
-          { cmd: "groupimage", desc: "foto del grupo" }
-        ]
-      },
-      {
-        title: "📊 ESTADÍSTICAS",
-        items: [
-          { cmd: "msgcount", desc: "contar mensajes" },
-          { cmd: "topcount", desc: "top de mensajes" },
-          { cmd: "topinactive", desc: "top de inactivos" },
-          { cmd: "alerts", desc: "alertas del grupo" }
-        ]
-      },
-      {
-        title: "🔧 ACTIVACIÓN",
-        items: [
-          { cmd: "bot on/off", desc: "activar o apagar el bot" },
-          { cmd: "economy on/off", desc: "activar economía" },
-          { cmd: "gacha on/off", desc: "activar gacha" },
-          { cmd: "nsfw on/off", desc: "activar NSFW" }
-        ]
-      }
-    ]
-  },
-  reacciones: {
-    emoji: "💞",
-    title: "REACCIONES",
-    sections: [
-      {
-        title: "😊 EMOCIONES",
-        items: [
-          { cmd: "angry" }, { cmd: "blush" }, { cmd: "bored" }, { cmd: "cry" },
-          { cmd: "dramatic" }, { cmd: "happy" }, { cmd: "sad" }, { cmd: "scared" },
-          { cmd: "shy" }, { cmd: "sick" }, { cmd: "think" }, { cmd: "pout" }
-        ]
-      },
-      {
-        title: "🤗 AFECTO",
-        items: [
-          { cmd: "hug" }, { cmd: "cuddle" }, { cmd: "kiss" }, { cmd: "kisscheek" },
-          { cmd: "kisshead" }, { cmd: "pat" }, { cmd: "poke" }, { cmd: "tickle" },
-          { cmd: "love" }, { cmd: "seduce" }, { cmd: "smile" }
-        ]
-      },
-      {
-        title: "🎮 ACCIONES",
-        items: [
-          { cmd: "bite" }, { cmd: "call" }, { cmd: "clap" }, { cmd: "dance" },
-          { cmd: "draw" }, { cmd: "eat" }, { cmd: "gaming" }, { cmd: "jump" },
-          { cmd: "kicked" }, { cmd: "kill" }, { cmd: "laugh" }, { cmd: "lick" },
-          { cmd: "look" }, { cmd: "nope" }, { cmd: "punch" }, { cmd: "push" },
-          { cmd: "run" }, { cmd: "slap" }, { cmd: "sleep" }, { cmd: "spit" },
-          { cmd: "step" }
-        ]
-      },
-      {
-        title: "☕ VIDA DIARIA",
-        items: [
-          { cmd: "bath" }, { cmd: "bleh" }, { cmd: "coffee" }, { cmd: "cold" },
-          { cmd: "cook" }, { cmd: "drunk" }, { cmd: "facepalm" }, { cmd: "greet" },
-          { cmd: "hang" }, { cmd: "heat" }, { cmd: "icecream" }, { cmd: "impregnate" },
-          { cmd: "lewd" }, { cmd: "psycho" }, { cmd: "read" }, { cmd: "scream" },
-          { cmd: "scrub" }, { cmd: "sing" }, { cmd: "smoke" }, { cmd: "sneeze" },
-          { cmd: "study" }, { cmd: "talk" }, { cmd: "walk" }, { cmd: "yawn" }
-        ]
-      }
-    ]
-  },
-  uno: {
-    emoji: "🃏",
-    title: "UNO",
-    sections: [
-      {
-        title: "🎮 PARTIDA",
-        items: [
-          { cmd: "uno create", desc: "crear partida con apuesta" },
-          { cmd: "uno join", desc: "unirte a la partida" },
-          { cmd: "uno start", desc: "iniciar la partida" },
-          { cmd: "uno leave", desc: "salir de la partida" }
-        ]
-      },
-      {
-        title: "📊 ESTADÍSTICAS",
-        items: [
-          { cmd: "unohistory", desc: "historial de partidas" },
-          { cmd: "unostats", desc: "tus estadísticas" },
-          { cmd: "unotop", desc: "ranking de UNO" }
-        ]
-      }
-    ]
-  },
-  anime: {
-    emoji: "📺",
-    title: "ANIME",
-    sections: [
-      {
-        title: "🍥 BUSCAR Y DESCARGAR",
-        items: [
-          { cmd: "ani", desc: "búsqueda, temporada, calidad e idioma" }
-        ]
-      }
-    ]
-  }
-}
 
 function normalizeMenuKey(value) {
   return String(value || "")
@@ -1086,6 +648,48 @@ function normalizeSenderJid(msg) {
   return phoneJid || candidates[0] || ""
 }
 
+function jidCore(jid) {
+  if (typeof jid !== "string" || !jid) return ""
+  const at = jid.lastIndexOf("@")
+  if (at === -1) return jid.split(":")[0]
+  return jid.slice(0, at).split(":")[0] + jid.slice(at)
+}
+
+function jidVariantSet(jids) {
+  const set = new Set()
+  for (const jid of jids) {
+    const core = jidCore(jid)
+    if (!core) continue
+    const at = core.lastIndexOf("@")
+    set.add(core)
+    if (at !== -1) {
+      const num = core.slice(0, at)
+      if (num) {
+        set.add(num + "@s.whatsapp.net")
+        set.add(num + "@lid")
+      }
+    }
+  }
+  return set
+}
+
+function jidInVariants(pid, variants) {
+  const core = jidCore(pid)
+  if (!core || variants.size === 0) return false
+  if (variants.has(core)) return true
+  const at = core.lastIndexOf("@")
+  if (at === -1) return false
+  const num = core.slice(0, at)
+  const domain = core.slice(at + 1)
+  if (!num || !domain) return false
+  for (const variant of variants) {
+    const vat = variant.lastIndexOf("@")
+    if (vat === -1) continue
+    if (variant.slice(vat + 1) === domain && variant.slice(0, vat) === num) return true
+  }
+  return false
+}
+
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(config.sessionName)
   const { version } = await fetchLatestBaileysVersion()
@@ -1187,11 +791,15 @@ async function startBot() {
     )
     const isOwner = ownerNumbers.has(cleanSenderNum) || sender === config.ownerNumber || msg.key.fromMe
 
+    const senderVariants = jidVariantSet([msg.key.participant, msg.key.participantAlt, msg.key.participantPn, sender])
+    const botVariants = jidVariantSet([sock.user?.id, sock.user?.lid])
+
     const isAdmin = async () => {
+      if (isOwner) return true
       if (!isGroup) return false
       try {
         const groupMetadata = await sock.groupMetadata(from)
-        const participant = groupMetadata.participants.find(p => p.id === sender)
+        const participant = groupMetadata.participants.find(p => jidInVariants(p.id, senderVariants))
         return participant?.admin === "admin" || participant?.admin === "superadmin"
       } catch {
         return false
@@ -1202,8 +810,7 @@ async function startBot() {
       if (!isGroup) return false
       try {
         const groupMetadata = await sock.groupMetadata(from)
-        const botId = sock.user.id.split(":")[0] + "@s.whatsapp.net"
-        const botParticipant = groupMetadata.participants.find(p => p.id === botId)
+        const botParticipant = groupMetadata.participants.find(p => jidInVariants(p.id, botVariants))
         return botParticipant?.admin === "admin" || botParticipant?.admin === "superadmin"
       } catch {
         return false
@@ -1239,7 +846,7 @@ async function startBot() {
         theirGacha2.characters.push(trade.receive)
         delete db.settings.pendingTrades[sender]
         saveDB()
-        await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ INTERCAMBIO COMPLETADO ◆ ─┐\n> Recibiste: ${trade.give.name}\n> Entregaste: ${trade.receive.name}\n└───────────────┘`)
+        await reply(`${panel(`INTERCAMBIO COMPLETADO`, `> Recibiste: ${trade.give.name}\n> Entregaste: ${trade.receive.name}`)}`)
         return
       }
 
@@ -1396,7 +1003,7 @@ async function startBot() {
         case "coins":
           const balTarget = mentioned.length > 0 ? mentioned[0] : sender
           const balUser = getUserEconomy(balTarget)
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ BALANCE DE @${balTarget.split("@")[0]} ◆ ─┐\n> 💰 Cartera: ${formatCoins(balUser.coins)} coins\n> 🏦 Banco: ${formatCoins(balUser.bank)} coins\n> 📊 Total: ${formatCoins(balUser.coins + balUser.bank)} coins\n└───────────────┘`)
+          await reply(`${panel(`BALANCE DE @${balTarget.split("@")[0]}`, `> 💰 Cartera: ${formatCoins(balUser.coins)} coins\n> 🏦 Banco: ${formatCoins(balUser.bank)} coins\n> 📊 Total: ${formatCoins(balUser.coins + balUser.bank)} coins`)}`)
           break
 
         case "daily":
@@ -1407,13 +1014,13 @@ async function startBot() {
             const remaining = dailyCooldown - (now - dailyUser.lastDaily)
             const hours = Math.floor(remaining / 3600000)
             const minutes = Math.floor((remaining % 3600000) / 60000)
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ DAILY ◆ ─┐\n> Ya reclamaste tu daily\n> Vuelve en: ${hours}h ${minutes}m\n└───────────────┘`)
+            await reply(`${panel(`DAILY`, `> Ya reclamaste tu daily\n> Vuelve en: ${hours}h ${minutes}m`)}`)
           } else {
             const amount = Math.floor(Math.random() * 2000) + 1000
             dailyUser.coins += amount
             dailyUser.lastDaily = now
             saveDB()
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ DAILY RECLAMADO ◆ ─┐\n> Recibiste: ${formatCoins(amount)} coins\n> Cartera: ${formatCoins(dailyUser.coins)} coins\n└───────────────┘`)
+            await reply(`${panel(`DAILY RECLAMADO`, `> Recibiste: ${formatCoins(amount)} coins\n> Cartera: ${formatCoins(dailyUser.coins)} coins`)}`)
           }
           break
 
@@ -1425,7 +1032,7 @@ async function startBot() {
           if (workNow - workUser.lastWork < workCooldown) {
             const remaining = workCooldown - (workNow - workUser.lastWork)
             const minutes = Math.floor(remaining / 60000)
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ TRABAJO ◆ ─┐\n> Debes descansar\n> Vuelve en: ${minutes} minutos\n└───────────────┘`)
+            await reply(`${panel(`TRABAJO`, `> Debes descansar\n> Vuelve en: ${minutes} minutos`)}`)
           } else {
             const jobs = ["Programador", "Diseñador", "Camarero", "Conductor", "Abogado", "Médico", "Ingeniero", "Arquitecto", "Profesor", "Policía"]
             const job = jobs[Math.floor(Math.random() * jobs.length)]
@@ -1434,7 +1041,7 @@ async function startBot() {
             workUser.lastWork = workNow
             addXP(sender, 10)
             saveDB()
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ TRABAJO ◆ ─┐\n> Trabajaste como: ${job}\n> Ganaste: ${formatCoins(amount)} coins\n> Cartera: ${formatCoins(workUser.coins)} coins\n└───────────────┘`)
+            await reply(`${panel(`TRABAJO`, `> Trabajaste como: ${job}\n> Ganaste: ${formatCoins(amount)} coins\n> Cartera: ${formatCoins(workUser.coins)} coins`)}`)
           }
           break
 
@@ -1445,7 +1052,7 @@ async function startBot() {
           if (crimeNow - crimeUser.lastCrime < crimeCooldown) {
             const remaining = crimeCooldown - (crimeNow - crimeUser.lastCrime)
             const minutes = Math.floor(remaining / 60000)
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ CRIMEN ◆ ─┐\n> La policía te busca\n> Vuelve en: ${minutes} minutos\n└───────────────┘`)
+            await reply(`${panel(`CRIMEN`, `> La policía te busca\n> Vuelve en: ${minutes} minutos`)}`)
           } else {
             const successCrime = Math.random() > 0.4
             if (successCrime) {
@@ -1454,13 +1061,13 @@ async function startBot() {
               crimeUser.lastCrime = crimeNow
               addXP(sender, 15)
               saveDB()
-              await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ CRIMEN EXITOSO ◆ ─┐\n> Robaste: ${formatCoins(amount)} coins\n> Cartera: ${formatCoins(crimeUser.coins)} coins\n└───────────────┘`)
+              await reply(`${panel(`CRIMEN EXITOSO`, `> Robaste: ${formatCoins(amount)} coins\n> Cartera: ${formatCoins(crimeUser.coins)} coins`)}`)
             } else {
               const fine = Math.min(Math.floor(Math.random() * 1000) + 500, crimeUser.coins)
               crimeUser.coins -= fine
               crimeUser.lastCrime = crimeNow
               saveDB()
-              await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ CRIMEN FALLIDO ◆ ─┐\n> Te atraparon\n> Multa: ${formatCoins(fine)} coins\n> Cartera: ${formatCoins(crimeUser.coins)} coins\n└───────────────┘`)
+              await reply(`${panel(`CRIMEN FALLIDO`, `> Te atraparon\n> Multa: ${formatCoins(fine)} coins\n> Cartera: ${formatCoins(crimeUser.coins)} coins`)}`)
             }
           }
           break
@@ -1472,14 +1079,14 @@ async function startBot() {
           if (slutNow - slutUser.lastSlut < slutCooldown) {
             const remaining = slutCooldown - (slutNow - slutUser.lastSlut)
             const minutes = Math.floor(remaining / 60000)
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ SLUT ◆ ─┐\n> Debes descansar\n> Vuelve en: ${minutes} minutos\n└───────────────┘`)
+            await reply(`${panel(`SLUT`, `> Debes descansar\n> Vuelve en: ${minutes} minutos`)}`)
           } else {
             const amount = Math.floor(Math.random() * 2500) + 800
             slutUser.coins += amount
             slutUser.lastSlut = slutNow
             addXP(sender, 12)
             saveDB()
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ SLUT ◆ ─┐\n> Ganaste: ${formatCoins(amount)} coins\n> Cartera: ${formatCoins(slutUser.coins)} coins\n└───────────────┘`)
+            await reply(`${panel(`SLUT`, `> Ganaste: ${formatCoins(amount)} coins\n> Cartera: ${formatCoins(slutUser.coins)} coins`)}`)
           }
           break
 
@@ -1496,7 +1103,7 @@ async function startBot() {
           if (stealNow - stealUser.lastSteal < stealCooldown) {
             const remaining = stealCooldown - (stealNow - stealUser.lastSteal)
             const minutes = Math.floor(remaining / 60000)
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ ROBAR ◆ ─┐\n> Debes esperar\n> Vuelve en: ${minutes} minutos\n└───────────────┘`)
+            await reply(`${panel(`ROBAR`, `> Debes esperar\n> Vuelve en: ${minutes} minutos`)}`)
             return
           }
           if (mentioned.length === 0) {
@@ -1516,13 +1123,13 @@ async function startBot() {
             targetEcon.coins -= amount
             stealUser.lastSteal = stealNow
             saveDB()
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ ROBÓ EXITOSO ◆ ─┐\n> Robaste: ${formatCoins(amount)} coins\n> De: @${target.split("@")[0]}\n└───────────────┘`)
+            await reply(`${panel(`ROBÓ EXITOSO`, `> Robaste: ${formatCoins(amount)} coins\n> De: @${target.split("@")[0]}`)}`)
           } else {
             const fine = Math.min(Math.floor(Math.random() * 800) + 200, stealUser.coins)
             stealUser.coins -= fine
             stealUser.lastSteal = stealNow
             saveDB()
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ ROBÓ FALLIDO ◆ ─┐\n> Te atraparon\n> Multa: ${formatCoins(fine)} coins\n└───────────────┘`)
+            await reply(`${panel(`ROBÓ FALLIDO`, `> Te atraparon\n> Multa: ${formatCoins(fine)} coins`)}`)
           }
           break
 
@@ -1556,11 +1163,11 @@ async function startBot() {
           if (cfChoice === resultCF) {
             cfUser.coins += cfAmount
             saveDB()
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ COINFLIP ◆ ─┐\n> Salió: ${resultCF}\n> Ganaste: ${formatCoins(cfAmount)} coins\n> Cartera: ${formatCoins(cfUser.coins)} coins\n└───────────────┘`)
+            await reply(`${panel(`COINFLIP`, `> Salió: ${resultCF}\n> Ganaste: ${formatCoins(cfAmount)} coins\n> Cartera: ${formatCoins(cfUser.coins)} coins`)}`)
           } else {
             cfUser.coins -= cfAmount
             saveDB()
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ COINFLIP ◆ ─┐\n> Salió: ${resultCF}\n> Perdiste: ${formatCoins(cfAmount)} coins\n> Cartera: ${formatCoins(cfUser.coins)} coins\n└───────────────┘`)
+            await reply(`${panel(`COINFLIP`, `> Salió: ${resultCF}\n> Perdiste: ${formatCoins(cfAmount)} coins\n> Cartera: ${formatCoins(cfUser.coins)} coins`)}`)
           }
           break
 
@@ -1598,11 +1205,11 @@ async function startBot() {
             const win = rtAmount * multiplier
             rtUser.coins += win
             saveDB()
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ RULETA ◆ ─┐\n> Número: ${num} (${color})\n> Ganaste: ${formatCoins(win)} coins\n> Cartera: ${formatCoins(rtUser.coins)} coins\n└───────────────┘`)
+            await reply(`${panel(`RULETA`, `> Número: ${num} (${color})\n> Ganaste: ${formatCoins(win)} coins\n> Cartera: ${formatCoins(rtUser.coins)} coins`)}`)
           } else {
             rtUser.coins -= rtAmount
             saveDB()
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ RULETA ◆ ─┐\n> Número: ${num} (${color})\n> Perdiste: ${formatCoins(rtAmount)} coins\n> Cartera: ${formatCoins(rtUser.coins)} coins\n└───────────────┘`)
+            await reply(`${panel(`RULETA`, `> Número: ${num} (${color})\n> Perdiste: ${formatCoins(rtAmount)} coins\n> Cartera: ${formatCoins(rtUser.coins)} coins`)}`)
           }
           break
 
@@ -1623,7 +1230,7 @@ async function startBot() {
           depUser.coins -= depAmount
           depUser.bank += depAmount
           saveDB()
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ DEPÓSITO ◆ ─┐\n> Depositaste: ${formatCoins(depAmount)} coins\n> Cartera: ${formatCoins(depUser.coins)} coins\n> Banco: ${formatCoins(depUser.bank)} coins\n└───────────────┘`)
+          await reply(`${panel(`DEPÓSITO`, `> Depositaste: ${formatCoins(depAmount)} coins\n> Cartera: ${formatCoins(depUser.coins)} coins\n> Banco: ${formatCoins(depUser.bank)} coins`)}`)
           break
 
         case "withdraw":
@@ -1642,7 +1249,7 @@ async function startBot() {
           withUser.bank -= withAmount
           withUser.coins += withAmount
           saveDB()
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ RETIRO ◆ ─┐\n> Retiraste: ${formatCoins(withAmount)} coins\n> Cartera: ${formatCoins(withUser.coins)} coins\n> Banco: ${formatCoins(withUser.bank)} coins\n└───────────────┘`)
+          await reply(`${panel(`RETIRO`, `> Retiraste: ${formatCoins(withAmount)} coins\n> Cartera: ${formatCoins(withUser.coins)} coins\n> Banco: ${formatCoins(withUser.bank)} coins`)}`)
           break
 
         case "givecoins":
@@ -1666,7 +1273,7 @@ async function startBot() {
           payUser.coins -= payAmount
           payTarget.coins += payAmount
           saveDB()
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ TRANSFERENCIA ◆ ─┐\n> Enviaste: ${formatCoins(payAmount)} coins\n> A: @${mentioned[0].split("@")[0]}\n└───────────────┘`)
+          await reply(`${panel(`TRANSFERENCIA`, `> Enviaste: ${formatCoins(payAmount)} coins\n> A: @${mentioned[0].split("@")[0]}`)}`)
           break
 
         case "economyboard":
@@ -1676,18 +1283,18 @@ async function startBot() {
             .map(([id, data]) => ({ id, total: data.coins + data.bank }))
             .sort((a, b) => b.total - a.total)
             .slice(0, 10)
-          let boardText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ RANKING ECONOMÍA ◆ ─┐\n`
+          let boardText = panelStart(`RANKING ECONOMÍA`, ``)
           sorted.forEach((entry, i) => {
             const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`
             boardText += `> ${medal} @${entry.id.split("@")[0]}: ${formatCoins(entry.total)} coins\n`
           })
-          boardText += `└───────────────┘`
+          boardText += PANEL_FOOTER
           await reply(boardText)
           break
 
         case "economyinfo":
         case "einfo":
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ INFO ECONOMÍA ◆ ─┐\n> Sistema de coins con cartera y banco\n> Daily cada 24 horas\n> Trabaja cada hora\n> Crimen cada 2 horas\n> Slut cada 3 horas\n> Robar cada 4 horas\n> Apuestas: coinflip y ruleta\n> Ranking global de coins\n└───────────────┘`)
+          await reply(`${panel(`INFO ECONOMÍA`, `> Sistema de coins con cartera y banco\n> Daily cada 24 horas\n> Trabaja cada hora\n> Crimen cada 2 horas\n> Slut cada 3 horas\n> Robar cada 4 horas\n> Apuestas: coinflip y ruleta\n> Ranking global de coins`)}`)
           break
 
         case "sticker":
@@ -1725,7 +1332,7 @@ async function startBot() {
           }
           db.stickers[sender].packs[text] = { stickers: [], private: false, favorite: false, desc: "" }
           saveDB()
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ PACK CREADO ◆ ─┐\n> Nombre: ${text}\n> Usa #stickeradd para añadir stickers\n└───────────────┘`)
+          await reply(`${panel(`PACK CREADO`, `> Nombre: ${text}\n> Usa #stickeradd para añadir stickers`)}`)
           break
 
         case "stickeradd":
@@ -1780,13 +1387,13 @@ async function startBot() {
             await reply("No tienes packs de stickers")
             return
           }
-          let packsText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ TUS PACKS ◆ ─┐\n`
+          let packsText = panelStart(`TUS PACKS`, ``)
           for (const [name, packData] of Object.entries(db.stickers[sender].packs)) {
             const fav = packData.favorite ? "★" : "☆"
             const priv = packData.private ? "🔒" : "🔓"
             packsText += `> ${fav} ${priv} ${name}: ${packData.stickers.length} stickers\n`
           }
-          packsText += `└───────────────┘`
+          packsText += PANEL_FOOTER
           await reply(packsText)
           break
 
@@ -1934,7 +1541,7 @@ async function startBot() {
           if (rollNow - gachaUser.lastRoll < rollCooldown) {
             const remaining = rollCooldown - (rollNow - gachaUser.lastRoll)
             const minutes = Math.floor(remaining / 60000)
-            await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ GACHA ◆ ─┐\n> Debes esperar\n> Vuelve en: ${minutes} minutos\n└───────────────┘`)
+            await reply(`${panel(`GACHA`, `> Debes esperar\n> Vuelve en: ${minutes} minutos`)}`)
             return
           }
           const rand = Math.random()
@@ -1949,7 +1556,7 @@ async function startBot() {
           db.settings.pendingClaims[from] = { character, claimId, timestamp: rollNow }
           gachaUser.lastRoll = rollNow
           saveDB()
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ GACHA ROLL ◆ ─┐\n> Nombre: ${character.name}\n> Serie: ${character.series}\n> Rareza: ${getRarityColor(character.rarity)} ${character.rarity}\n> Valor: ${formatCoins(character.value)} coins\n└───────────────┘\n\nEscribe #claim para reclamarla`)
+          await reply(`${panel(`GACHA ROLL`, `> Nombre: ${character.name}\n> Serie: ${character.series}\n> Rareza: ${getRarityColor(character.rarity)} ${character.rarity}\n> Valor: ${formatCoins(character.value)} coins`)}\n\nEscribe #claim para reclamarla`)
           break
 
         case "claim":
@@ -1981,7 +1588,7 @@ async function startBot() {
           delete db.settings.pendingClaims[from]
           addXP(sender, 20)
           saveDB()
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ PERSONAJE RECLAMADO ◆ ─┐\n> ${pending.character.name}\n> ${pending.character.series}\n> ${getRarityColor(pending.character.rarity)} ${pending.character.rarity}\n> Total en harem: ${claimUser.characters.length}\n└───────────────┘`)
+          await reply(`${panel(`PERSONAJE RECLAMADO`, `> ${pending.character.name}\n> ${pending.character.series}\n> ${getRarityColor(pending.character.rarity)} ${pending.character.rarity}\n> Total en harem: ${claimUser.characters.length}`)}`)
           break
 
         case "harem":
@@ -1993,11 +1600,11 @@ async function startBot() {
             await reply("No hay personajes en este harem")
             return
           }
-          let haremText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ HAREM DE @${haremTarget.split("@")[0]} ◆ ─┐\n> Total: ${haremUser.characters.length} personajes\n`
+          let haremText = panelStart(`HAREM DE @${haremTarget.split("@")[0]}`, `> Total: ${haremUser.characters.length} personajes\n`)
           haremUser.characters.slice(0, 20).forEach((char, i) => {
             haremText += `> ${i + 1}. ${getRarityColor(char.rarity)} ${char.name} - ${char.series}\n`
           })
-          haremText += `└───────────────┘`
+          haremText += PANEL_FOOTER
           await replyWithMention(haremText, [haremTarget])
           break
 
@@ -2027,7 +1634,7 @@ async function startBot() {
           buyUser.coins -= buyChar.value
           buyGacha.characters.push({ ...buyChar, claimedAt: Date.now() })
           saveDB()
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ COMPRA EXITOSA ◆ ─┐\n> ${buyChar.name}\n> ${buyChar.series}\n> Pagaste: ${formatCoins(buyChar.value)} coins\n└───────────────┘`)
+          await reply(`${panel(`COMPRA EXITOSA`, `> ${buyChar.name}\n> ${buyChar.series}\n> Pagaste: ${formatCoins(buyChar.value)} coins`)}`)
           break
 
         case "sell":
@@ -2048,7 +1655,7 @@ async function startBot() {
           const sellUser = getUserEconomy(sender)
           sellUser.coins += sellPrice
           saveDB()
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ VENTA EXITOSA ◆ ─┐\n> ${sellChar.name}\n> Recibiste: ${formatCoins(sellPrice)} coins\n└───────────────┘`)
+          await reply(`${panel(`VENTA EXITOSA`, `> ${sellChar.name}\n> Recibiste: ${formatCoins(sellPrice)} coins`)}`)
           break
 
         case "removesale":
@@ -2090,7 +1697,7 @@ async function startBot() {
             timestamp: Date.now()
           }
           saveDB()
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ INTERCAMBIO ◆ ─┐\n> @${tradeTarget.split("@")[0]}\n> Te ofrecen: ${yourChar.name}\n> Por tu: ${theirChar.name}\n> Escribe #trade accept para aceptar\n> O #trade reject para rechazar\n└───────────────┘`)
+          await reply(`${panel(`INTERCAMBIO`, `> @${tradeTarget.split("@")[0]}\n> Te ofrecen: ${yourChar.name}\n> Por tu: ${theirChar.name}\n> Escribe #trade accept para aceptar\n> O #trade reject para rechazar`)}`)
           break
 
         case "vote":
@@ -2128,7 +1735,7 @@ async function startBot() {
             await reply("Personaje no encontrado")
             return
           }
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ INFO PERSONAJE ◆ ─┐\n> Nombre: ${infoChar.name}\n> Serie: ${infoChar.series}\n> Rareza: ${getRarityColor(infoChar.rarity)} ${infoChar.rarity}\n> Valor: ${formatCoins(infoChar.value)} coins\n└───────────────┘`)
+          await reply(`${panel(`INFO PERSONAJE`, `> Nombre: ${infoChar.name}\n> Serie: ${infoChar.series}\n> Rareza: ${getRarityColor(infoChar.rarity)} ${infoChar.rarity}\n> Valor: ${formatCoins(infoChar.value)} coins`)}`)
           break
 
         case "charimage":
@@ -2165,11 +1772,11 @@ async function startBot() {
             await reply("Serie no encontrada")
             return
           }
-          let seriesText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ INFO SERIE ◆ ─┐\n> Serie: ${seriesChars[0].series}\n> Personajes: ${seriesChars.length}\n`
+          let seriesText = panelStart(`INFO SERIE`, `> Serie: ${seriesChars[0].series}\n> Personajes: ${seriesChars.length}\n`)
           seriesChars.forEach(char => {
             seriesText += `> ${getRarityColor(char.rarity)} ${char.name}\n`
           })
-          seriesText += `└───────────────┘`
+          seriesText += PANEL_FOOTER
           await reply(seriesText)
           break
 
@@ -2177,19 +1784,19 @@ async function startBot() {
         case "slist":
         case "animelist":
           const seriesSet = new Set(gachaCharacters.map(c => c.series))
-          let seriesListText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ LISTA DE SERIES ◆ ─┐\n`
+          let seriesListText = panelStart(`LISTA DE SERIES`, ``)
           seriesSet.forEach(series => {
             const count = gachaCharacters.filter(c => c.series === series).length
             seriesListText += `> ${series} (${count} personajes)\n`
           })
-          seriesListText += `└───────────────┘`
+          seriesListText += PANEL_FOOTER
           await reply(seriesListText)
           break
 
         case "haremshop":
         case "tiendawaifus":
         case "wshop":
-          let shopText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ TIENDA GACHA ◆ ─┐\n`
+          let shopText = panelStart(`TIENDA GACHA`, ``)
           gachaCharacters.slice(0, 10).forEach(char => {
             shopText += `> ${getRarityColor(char.rarity)} ${char.name} - ${formatCoins(char.value)} coins\n`
           })
@@ -2205,12 +1812,12 @@ async function startBot() {
             .map(([id, data]) => ({ id, count: data.characters.length }))
             .sort((a, b) => b.count - a.count)
             .slice(0, 10)
-          let waifuText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ RANKING WAIFUS ◆ ─┐\n`
+          let waifuText = panelStart(`RANKING WAIFUS`, ``)
           waifuTop.forEach((entry, i) => {
             const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`
             waifuText += `> ${medal} @${entry.id.split("@")[0]}: ${entry.count} waifus\n`
           })
-          waifuText += `└───────────────┘`
+          waifuText += PANEL_FOOTER
           await reply(waifuText)
           break
 
@@ -2222,7 +1829,7 @@ async function startBot() {
         case "gachainfo":
         case "ginfo":
         case "infogacha":
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ INFO GACHA ◆ ─┐\n> Roll cada hora\n> Rarezas: SSR (5%), SR (20%), R (75%)\n> Reclama con #claim\n> Compra en #haremshop\n> Vende con #sell\n> Intercambia con #trade\n└───────────────┘`)
+          await reply(`${panel(`INFO GACHA`, `> Roll cada hora\n> Rarezas: SSR (5%), SR (20%), R (75%)\n> Reclama con #claim\n> Compra en #haremshop\n> Vende con #sell\n> Intercambia con #trade`)}`)
           break
 
         case "givechar":
@@ -2741,14 +2348,14 @@ case "video":
           const profileUser = getUserProfile(profileTarget)
           const profileEcon = getUserEconomy(profileTarget)
           const profileGacha = getUserGacha(profileTarget)
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ PERFIL DE @${profileTarget.split("@")[0]} ◆ ─┐\n> 📊 Nivel: ${profileUser.level}\n> ✨ XP: ${profileUser.xp}/${profileUser.level * 100}\n> 💰 Coins: ${formatCoins(profileEcon.coins + profileEcon.bank)}\n> 🎴 Waifus: ${profileGacha.characters.length}\n> 📝 Descripción: ${profileUser.description}\n> 🎂 Cumpleaños: ${profileUser.birthday || "No establecido"}\n> 🎭 Género: ${profileUser.genre || "No establecido"}\n> ⭐ Favorito: ${profileUser.favourite || "No establecido"}\n> 💍 Casado con: ${profileUser.married ? "@" + profileUser.married.split("@")[0] : "Soltero"}\n└───────────────┘`)
+          await reply(`${panel(`PERFIL DE @${profileTarget.split("@")[0]}`, `> 📊 Nivel: ${profileUser.level}\n> ✨ XP: ${profileUser.xp}/${profileUser.level * 100}\n> 💰 Coins: ${formatCoins(profileEcon.coins + profileEcon.bank)}\n> 🎴 Waifus: ${profileGacha.characters.length}\n> 📝 Descripción: ${profileUser.description}\n> 🎂 Cumpleaños: ${profileUser.birthday || "No establecido"}\n> 🎭 Género: ${profileUser.genre || "No establecido"}\n> ⭐ Favorito: ${profileUser.favourite || "No establecido"}\n> 💍 Casado con: ${profileUser.married ? "@" + profileUser.married.split("@")[0] : "Soltero"}`)}`)
           break
 
         case "level":
         case "lvl":
           const lvlTarget = mentioned.length > 0 ? mentioned[0] : sender
           const lvlUser = getUserProfile(lvlTarget)
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ NIVEL DE @${lvlTarget.split("@")[0]} ◆ ─┐\n> Nivel: ${lvlUser.level}\n> XP: ${lvlUser.xp}/${lvlUser.level * 100}\n> Progreso: ${Math.floor((lvlUser.xp / (lvlUser.level * 100)) * 100)}%\n└───────────────┘`)
+          await reply(`${panel(`NIVEL DE @${lvlTarget.split("@")[0]}`, `> Nivel: ${lvlUser.level}\n> XP: ${lvlUser.xp}/${lvlUser.level * 100}\n> Progreso: ${Math.floor((lvlUser.xp / (lvlUser.level * 100)) * 100)}%`)}`)
           break
 
         case "leaderboard":
@@ -2758,12 +2365,12 @@ case "video":
             .map(([id, data]) => ({ id, level: data.level, xp: data.xp }))
             .sort((a, b) => b.level - a.level || b.xp - a.xp)
             .slice(0, 10)
-          let topText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ RANKING NIVELES ◆ ─┐\n`
+          let topText = panelStart(`RANKING NIVELES`, ``)
           topUsers.forEach((entry, i) => {
             const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`
             topText += `> ${medal} @${entry.id.split("@")[0]}: Nivel ${entry.level}\n`
           })
-          topText += `└───────────────┘`
+          topText += PANEL_FOOTER
           await reply(topText)
           break
 
@@ -2814,11 +2421,11 @@ case "video":
             await reply("No hay historial de matrimonios")
             return
           }
-          let historyText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ HISTORIAL MATRIMONIAL ◆ ─┐\n`
+          let historyText = panelStart(`HISTORIAL MATRIMONIAL`, ``)
           historyUser.marryHistory.forEach(h => {
             historyText += `> ${h.action === "marry" ? "💍 Casado" : "💔 Divorciado"} con @${h.partner.split("@")[0]}\n`
           })
-          historyText += `└───────────────┘`
+          historyText += PANEL_FOOTER
           await replyWithMention(historyText, [histTarget])
           break
 
@@ -2913,7 +2520,7 @@ case "video":
             return
           }
           const groupMeta = await sock.groupMetadata(from)
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ INFO GRUPO ◆ ─┐\n> Nombre: ${groupMeta.subject}\n> Miembros: ${groupMeta.participants.length}\n> Creado: ${new Date(groupMeta.creation * 1000).toLocaleDateString()}\n> Descripción: ${groupMeta.desc || "Sin descripción"}\n└───────────────┘`)
+          await reply(`${panel(`INFO GRUPO`, `> Nombre: ${groupMeta.subject}\n> Miembros: ${groupMeta.participants.length}\n> Creado: ${new Date(groupMeta.creation * 1000).toLocaleDateString()}\n> Descripción: ${groupMeta.desc || "Sin descripción"}`)}`)
           break
 
         case "qr":
@@ -2922,7 +2529,7 @@ case "video":
             await reply("Este comando se usa por mensaje privado")
             return
           }
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ SUB-BOT QR ◆ ─┐\n> Función de sub-bot activa\n> Envía tu número o mención\n└───────────────┘`)
+          await reply(`${panel(`SUB-BOT QR`, `> Función de sub-bot activa\n> Envía tu número o mención`)}`)
           break
 
         case "qrpremium":
@@ -2975,7 +2582,7 @@ case "video":
 
         case "botinfo":
         case "infobot":
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ INFO BOT ◆ ─┐\n> Nombre: ${config.botName}\n> Versión: 1.0.0\n> Creador: ${config.owner}\n> Prefix: ${config.prefix}\n> Librería: Baileys\n> Runtime: Node.js\n└───────────────┘`)
+          await reply(`${panel(`INFO BOT`, `> Nombre: ${config.botName}\n> Versión: 1.0.0\n> Creador: ${config.owner}\n> Prefix: ${config.prefix}\n> Librería: Baileys\n> Runtime: Node.js`)}`)
           break
 
         case "premium":
@@ -2985,7 +2592,7 @@ case "video":
             await reply("Este comando se usa por privado")
             return
           }
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ PREMIUM ◆ ─┐\n> Beneficios premium:\n> Acceso a comandos exclusivos\n> Límites aumentados\n> Soporte prioritario\n> Contacta al dueño para más info\n└───────────────┘`)
+          await reply(`${panel(`PREMIUM`, `> Beneficios premium:\n> Acceso a comandos exclusivos\n> Límites aumentados\n> Soporte prioritario\n> Contacta al dueño para más info`)}`)
           break
 
         case "reload":
@@ -3121,16 +2728,16 @@ case "video":
           const start = Date.now()
           const pingMsg = await sock.sendMessage(from, { text: "Calculando ping..." }, { quoted: msg })
           const end = Date.now()
-          await sock.sendMessage(from, { text: `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ PING ◆ ─┐\n> Velocidad: ${end - start}ms\n> Estado: Activo\n└───────────────┘`, edit: pingMsg.key })
+          await sock.sendMessage(from, { text: `${panel(`PING`, `> Velocidad: ${end - start}ms\n> Estado: Activo`)}`, edit: pingMsg.key })
           break
 
         case "status":
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ ESTADO ◆ ─┐\n> Bot: Online\n> Uptime: ${process.uptime().toFixed(0)}s\n> Memoria: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB\n> Node: ${process.version}\n└───────────────┘`)
+          await reply(`${panel(`ESTADO`, `> Bot: Online\n> Uptime: ${process.uptime().toFixed(0)}s\n> Memoria: ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB\n> Node: ${process.version}`)}`)
           break
 
         case "bots":
         case "sockets":
-          await reply(`╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ BOTS ACTIVOS ◆ ─┐\n> 1. Zenith-Bot (Principal)\n> Estado: Activo\n└───────────────┘`)
+          await reply(`${panel(`BOTS ACTIVOS`, `> 1. Zenith-Bot (Principal)\n> Estado: Activo`)}`)
           break
 
         case "del":
@@ -3229,10 +2836,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           if (mentioned.length === 0) {
             await reply("Uso: #warn @usuario [razón]")
             return
@@ -3262,11 +2866,11 @@ case "video":
           }
           let warnsTarget = mentioned.length > 0 ? mentioned[0] : sender
           const warnsData = getWarns(from, warnsTarget)
-          let warnsText = `╔════════════════════╗\n  ⚡ ZENITH - BOT ⚡\n╚════════════════════╝\n\n┌─ ◆ WARNS ◆ ─┐\n> Usuario: @${warnsTarget.split("@")[0]}\n> Total: ${warnsData.count}\n`
+          let warnsText = panelStart(`WARNS`, `> Usuario: @${warnsTarget.split("@")[0]}\n> Total: ${warnsData.count}\n`)
           warnsData.reasons.forEach((reason, i) => {
             warnsText += `> ${i + 1}. ${reason}\n`
           })
-          warnsText += `└───────────────┘`
+          warnsText += PANEL_FOOTER
           await replyWithMention(warnsText, [warnsTarget])
           break
 
@@ -3275,10 +2879,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           if (mentioned.length === 0) {
             await reply("Uso: #delwarn @usuario")
             return
@@ -3296,10 +2897,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const newLimit = parseInt(text)
           if (isNaN(newLimit) || newLimit < 1) {
             await reply("Uso: #setwarnlimit <número>")
@@ -3316,10 +2914,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           if (mentioned.length === 0) {
             await reply("Uso: #kick @usuario")
             return
@@ -3333,10 +2928,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           if (mentioned.length === 0) {
             await reply("Uso: #promote @usuario")
             return
@@ -3350,10 +2942,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           if (mentioned.length === 0) {
             await reply("Uso: #demote @usuario")
             return
@@ -3367,10 +2956,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           await sock.groupSettingUpdate(from, "not_announcement")
           await reply("Grupo abierto")
           break
@@ -3380,10 +2966,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           await sock.groupSettingUpdate(from, "announcement")
           await reply("Grupo cerrado")
           break
@@ -3394,10 +2977,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const antilinkSettings = getGroupSettings(from)
           antilinkSettings.antilink = !antilinkSettings.antilink
           saveDB()
@@ -3410,10 +2990,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const welcomeSettings = getGroupSettings(from)
           welcomeSettings.welcome = !welcomeSettings.welcome
           saveDB()
@@ -3426,10 +3003,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const goodbyeSettings = getGroupSettings(from)
           goodbyeSettings.goodbye = !goodbyeSettings.goodbye
           saveDB()
@@ -3441,10 +3015,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           if (!text) {
             await reply("Uso: #setwelcome <mensaje>")
             return
@@ -3460,10 +3031,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           if (!text) {
             await reply("Uso: #setgoodbye <mensaje>")
             return
@@ -3482,10 +3050,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           if (!quoted || !quoted.imageMessage) {
             await reply("Responde a una imagen con #groupimage")
             return
@@ -3507,10 +3072,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const metaGroup = await sock.groupMetadata(from)
           const allParticipants = metaGroup.participants.map(p => p.id)
           const tagText = text || "Mención a todos"
@@ -3523,10 +3085,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const onlyadminSettings = getGroupSettings(from)
           onlyadminSettings.onlyadmin = !onlyadminSettings.onlyadmin
           saveDB()
@@ -3571,10 +3130,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           await reply("Alertas configuradas")
           break
 
@@ -3583,10 +3139,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           if (args[0] === "on") {
             await reply("Bot activado en este grupo")
           } else if (args[0] === "off") {
@@ -3602,10 +3155,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const economySettings = getGroupSettings(from)
           if (args[0] === "on") {
             economySettings.economy = true
@@ -3625,10 +3175,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const gachaSettings2 = getGroupSettings(from)
           if (args[0] === "on") {
             gachaSettings2.gacha = true
@@ -3648,10 +3195,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const nsfwSettings = getGroupSettings(from)
           if (args[0] === "on") {
             nsfwSettings.nsfw = true
@@ -3671,10 +3215,7 @@ case "video":
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) {
-            await reply("Solo admins pueden usar este comando")
-            return
-          }
+          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           const primarySettings = getGroupSettings(from)
           primarySettings.primary = text
           saveDB()
@@ -3838,9 +3379,10 @@ case "video":
       const sender = msg.key.participant || msg.key.remoteJid
       try {
         const meta = await sock.groupMetadata(from)
-        const botId = sock.user.id.split(":")[0] + "@s.whatsapp.net"
-        const isBotAdmin = meta.participants.find(p => p.id === botId)?.admin
-        const isSenderAdmin = meta.participants.find(p => p.id === sender)?.admin
+        const antilinkBotVariants = jidVariantSet([sock.user?.id, sock.user?.lid])
+        const antilinkSenderVariants = jidVariantSet([msg.key.participant, msg.key.participantAlt, msg.key.participantPn, sender])
+        const isBotAdmin = meta.participants.find(p => jidInVariants(p.id, antilinkBotVariants))?.admin
+        const isSenderAdmin = meta.participants.find(p => jidInVariants(p.id, antilinkSenderVariants))?.admin
         if (isSenderAdmin) return
         if (isBotAdmin) {
           await sock.sendMessage(from, { delete: { remoteJid: from, fromMe: false, id: msg.key.id, participant: sender } })
