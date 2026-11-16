@@ -12,6 +12,7 @@ import fs from "fs"
 import path from "path"
 import { exec } from "child_process"
 import { promisify } from "util"
+import { fileURLToPath } from "url"
 import axios from "axios"
 import play from 'play-dl'
 import ffmpeg from 'ffmpeg-static'
@@ -150,7 +151,11 @@ async function stickerToImage(buffer) {
   }
 }
 
-const MENU_IMAGE = fs.existsSync(path.join(process.cwd(), "menu.jpg")) ? path.join(process.cwd(), "menu.jpg") : ""
+const MENU_IMAGE = [
+  path.join(process.cwd(), "menu.jpg"),
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "menu.jpg"),
+  "/home/container/menu.jpg"
+].find((p) => fs.existsSync(p)) || ""
 const searchHistory = new Map()
 
 const config = {
