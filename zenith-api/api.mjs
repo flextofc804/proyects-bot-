@@ -586,7 +586,6 @@ async function enrichTiktokResults(results) {
 async function tiktokSearch(query) {
   const providers = [
     ["tiktok search", () => tikwmSearch(query, "https://www.tikwm.com")],
-    ["tiktok search (espejo)", () => tikwmSearch(query, "https://api.tikwm.com")],
     ["buscador web", () => webSearchTiktok(query)]
   ]
   const errors = []
@@ -664,7 +663,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 200, { ok: true, query, results: safe })
       })
       .catch((e) => {
-        sendJson(res, 200, { ok: false, error: String(e?.message || e).slice(0, 300) })
+        sendJson(res, 200, { ok: false, error: String(e?.message || e).slice(0, 700) })
       })
     return
   }
