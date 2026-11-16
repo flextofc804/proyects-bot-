@@ -316,6 +316,47 @@ function downloadTo(url, destination, headers, timeout = 120000) {
   })
 }
 
+const CRAWLER_UA = "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)"
+
+async function instagramCrawler(target, id) {
+  const shortcode = igShortcode(target)
+  if (!shortcode) throw new Error("no pude leer el código del post de Instagram")
+  const kind = /\/(?:reel|reels|tv)\//.test(target) ? "reel" : "p"
+  const page = await httpsGet(`https://www.instagram.com/${kind}/${shortcode}/`, {
+    "user-agent": CRAWLER_UA,
+    accept: "text/html"
+  })
+  if (page.status !== 200) throw new Error(`Instagram respondió HTTP ${page.status}`)
+  const marker = '"video_versions":'
+  const start = page.body.indexOf(marker)
+  if (start < 0) throw new Error("el post no tiene video descargable (¿son imágenes?)")
+  let depth = 0
+  let end = -1
+  for (let i = start + marker.length; i < page.body.length; i++) {
+    const c = page.body[i]
+    if (c === "[") depth++
+    else if (c === "]") {
+      depth--
+      if (depth === 0) {
+        end = i + 1
+        break
+      }
+    }
+  }
+  if (end < 0) throw new Error("respuesta de Instagram ilegible")
+  let versions
+  try {
+    versions = JSON.parse(page.body.slice(start + marker.length, end))
+  } catch {
+    throw new Error("respuesta de Instagram ilegible")
+  }
+  const video = versions[0]?.url
+  if (!video) throw new Error("el post no tiene video descargable")
+  const destination = path.join(root, `api_dl_${id}.mp4`)
+  await downloadTo(video, destination, { "user-agent": BROWSER_UA, referer: "https://www.instagram.com/" })
+  return destination
+}
+
 async function instagramMobile(target, id) {
   const shortcode = igShortcode(target)
   if (!shortcode) throw new Error("no pude leer el código del post de Instagram")
@@ -391,10 +432,15 @@ const server = http.createServer(async (req, res) => {
   const isYouTube = /(^|\.)youtube\.com$/.test(hostname) || hostname === "youtu.be" || hostname === "www.youtu.be"
   let chain
   if (isInstagram) {
-    chain = instagramMobile(target, id).catch((igError) => {
-      log(`método Instagram sin login falló: ${String(igError?.message || igError).slice(0, 150)}`)
-      return runYtDlp(target, mode, id)
-    })
+    chain = instagramCrawler(target, id)
+      .catch((crawlerError) => {
+        log(`método Instagram crawler falló: ${String(crawlerError?.message || crawlerError).slice(0, 150)}`)
+        return instagramMobile(target, id)
+      })
+      .catch((igError) => {
+        log(`método Instagram sin login falló: ${String(igError?.message || igError).slice(0, 150)}`)
+        return runYtDlp(target, mode, id)
+      })
   } else if (isYouTube) {
     chain = ensurePotServer()
       .then(() => runYtDlp(target, mode, id, "tv_embedded"))
