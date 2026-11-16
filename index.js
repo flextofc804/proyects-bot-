@@ -897,20 +897,44 @@ async function enviarMenuPrincipal(sock, from, msg) {
   } else {
     await sock.sendMessage(from, { text }, { quoted: msg })
   }
+  const rows = renderMenuListRows()
+  const sections = [{ title: "📂 Categorías", rows: rows.map(({ title, rowId, description }) => ({ title, description, id: rowId })) }]
   try {
     await sock.sendMessage(
       from,
       {
-        text: "Tocá el botón para ver todos los comandos 👇",
-        footer: "ZENITH Bot",
-        title: "📜 MENÚ DE COMANDOS",
-        buttonText: "Ver comandos 📜",
-        sections: [{ title: "📂 Categorías", rows: renderMenuListRows() }]
+        interactiveMessage: {
+          body: { text: "Tocá el botón para ver todos los comandos 👇" },
+          footer: { text: "ZENITH Bot" },
+          nativeFlowMessage: {
+            buttons: [
+              {
+                name: "single_select",
+                buttonParamsJson: JSON.stringify({ title: "Ver comandos 📜", sections })
+              }
+            ]
+          }
+        }
       },
       { quoted: msg }
     )
   } catch (e) {
-    console.log("botón de menú no soportado por este WhatsApp:", e?.message || e)
+    console.log("botón interactivo falló, probando formato viejo:", e?.message || e)
+    try {
+      await sock.sendMessage(
+        from,
+        {
+          text: "Tocá el botón para ver todos los comandos 👇",
+          footer: "ZENITH Bot",
+          title: "📜 MENÚ DE COMANDOS",
+          buttonText: "Ver comandos 📜",
+          sections: [{ title: "📂 Categorías", rows }]
+        },
+        { quoted: msg }
+      )
+    } catch (e2) {
+      console.log("botón de menú no soportado por este WhatsApp:", e2?.message || e2)
+    }
   }
   await stopTyping(sock, from)
 }
