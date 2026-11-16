@@ -394,6 +394,7 @@ function isNsfw(text) {
 }
 
 const searchRate = new Map()
+const searchCache = new Map()
 
 function absolutizeTikwmUrl(url) {
   if (!url) return ""
@@ -479,34 +480,60 @@ async function fetchEngine(searchUrl, options) {
   return links
 }
 
+async function searxSearchTiktok(query, base) {
+  const url = base + "/search?" + new URLSearchParams({ q: `site:tiktok.com ${query}`, format: "json" })
+  const response = await fetch(url, {
+    headers: { "user-agent": BROWSER_UA, accept: "application/json" },
+    signal: AbortSignal.timeout(12000)
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const body = await response.json().catch(() => null)
+  if (!body || !Array.isArray(body.results)) throw new Error("respuesta invalida")
+  const links = body.results
+    .map((r) => String(r?.url || ""))
+    .filter((u) => /https?:\/\/(?:www\.)?tiktok\.com\/@[\w.\-]+\/video\/\d+/i.test(u))
+    .map((u) => u.replace(/[)?.,]+$/, ""))
+  if (!links.length) throw new Error("sin enlaces de TikTok")
+  return links
+}
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
 async function webSearchTiktok(query) {
-  const variants = [`site:tiktok.com ${query}`, `${query} site:www.tiktok.com`, `${query} tiktok`]
-  const attempts = []
-  for (const v of variants) {
-    const qs = new URLSearchParams({ q: v }).toString()
-    attempts.push(["ddg html", "https://html.duckduckgo.com/html/?" + qs, { headers: { "user-agent": BROWSER_UA } }])
-    attempts.push(["ddg html movil", "https://html.duckduckgo.com/html/?" + qs, { headers: { "user-agent": MOBILE_UA } }])
-    attempts.push(["ddg lite", "https://lite.duckduckgo.com/lite/?" + qs, { headers: { "user-agent": BROWSER_UA } }])
-    attempts.push(["ddg lite movil", "https://lite.duckduckgo.com/lite/?" + qs, { headers: { "user-agent": MOBILE_UA } }])
-  }
-  attempts.push(["bing", "https://www.bing.com/search?" + new URLSearchParams({ q: `site:tiktok.com ${query}` }), { headers: { "user-agent": BROWSER_UA } }])
-  attempts.push(["google", "https://www.google.com/search?" + new URLSearchParams({ q: `site:tiktok.com ${query}`, gbv: "1", hl: "es" }), { headers: { "user-agent": BROWSER_UA } }])
-  attempts.push(["mojeek", "https://www.mojeek.com/search?" + new URLSearchParams({ q: `site:tiktok.com ${query}` }), { headers: { "user-agent": BROWSER_UA } }])
+  const primary = `site:tiktok.com ${query}`
+  const attempts = [
+    ["ddg html", "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }],
+    ["ddg html movil", "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": MOBILE_UA } }],
+    ["ddg lite", "https://lite.duckduckgo.com/lite/?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }],
+    ["ddg html (dominio principal)", "https://duckduckgo.com/html/?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }],
+    ["searx tiekoetter", null, { searx: "https://searx.tiekoetter.com" }],
+    ["searx paulgo", null, { searx: "https://paulgo.io" }],
+    ["searx opnxng", null, { searx: "https://opnxng.com" }],
+    ["bing", "https://www.bing.com/search?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }],
+    ["google basico", "https://www.google.com/search?" + new URLSearchParams({ q: primary, gbv: "1", hl: "es" }), { headers: { "user-agent": BROWSER_UA } }],
+    ["mojeek", "https://www.mojeek.com/search?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }]
+  ]
+  const secondary = `${query} tiktok`
+  attempts.push(["ddg html (variante)", "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: secondary }), { headers: { "user-agent": BROWSER_UA } }])
 
   const collected = new Set()
   const errors = []
   const deadline = Date.now() + 70000
   for (const [name, url, options] of attempts) {
+    if (collected.size >= 5) break
     if (Date.now() > deadline) {
       errors.push("tiempo de busqueda agotado")
       break
     }
     try {
-      const links = await fetchEngine(url, options)
+      let links
+      if (options?.searx) links = await searxSearchTiktok(query, options.searx)
+      else links = await fetchEngine(url, options)
       links.forEach((l) => collected.add(l))
-      if (collected.size >= 5) break
+      if (collected.size < 5) await pause(1200)
     } catch (e) {
       errors.push(`${name}: ${String(e?.message || e).slice(0, 80)}`)
+      await pause(1200)
     }
   }
   if (!collected.size) throw new Error(errors.slice(0, 5).join(" | ") || "sin resultados")
@@ -619,6 +646,11 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { ok: false, nsfw: true, error: "no puedo buscar contenido +18 o expl\u00edcito" })
       return
     }
+    const cached = searchCache.get(query)
+    if (cached && Date.now() - cached.t < 600000) {
+      sendJson(res, 200, { ok: true, query, results: cached.results, cache: true })
+      return
+    }
     log(`b\u00fasqueda TikTok: ${query}`)
     tiktokSearch(query)
       .then(async (results) => {
@@ -628,6 +660,7 @@ const server = http.createServer(async (req, res) => {
           sendJson(res, 200, { ok: false, error: "sin resultados" })
           return
         }
+        searchCache.set(query, { t: Date.now(), results: safe })
         sendJson(res, 200, { ok: true, query, results: safe })
       })
       .catch((e) => {
