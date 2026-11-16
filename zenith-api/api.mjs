@@ -151,6 +151,23 @@ function cleanDownloads(id) {
   } catch {}
 }
 
+let jsRuntimeArgsPromise = null
+
+function jsRuntimeArgs(binary) {
+  if (!jsRuntimeArgsPromise) {
+    jsRuntimeArgsPromise = (async () => {
+      const flag = ["--js-runtimes", `node:${process.execPath}`]
+      try {
+        await execFileAsync(binary, [...flag, "--version"], { timeout: 30000 })
+        return flag
+      } catch {
+        return []
+      }
+    })()
+  }
+  return jsRuntimeArgsPromise
+}
+
 async function runYtDlp(url, mode, id, client) {
   const binary = await ensureYtDlp()
   const args = [
@@ -159,6 +176,7 @@ async function runYtDlp(url, mode, id, client) {
     "-f", formatFor(mode),
     "-o", path.join(root, `api_dl_${id}.%(ext)s`)
   ]
+  args.push(...(await jsRuntimeArgs(binary)))
   if (client) args.push("--extractor-args", `youtube:player_client=${client}`)
   if (fs.existsSync(cookiesPath)) args.push("--cookies", cookiesPath)
   args.push(url)
@@ -381,17 +399,18 @@ const server = http.createServer(async (req, res) => {
       .then(() => runYtDlp(target, mode, id))
       .catch(async (firstError) => {
         const firstMessage = String(firstError?.stderr || firstError?.message || "")
-        if (!/sign in to confirm|not a bot|login_required|403|requested format/i.test(firstMessage)) throw firstError
-        let lastError = firstError
-        for (const client of ["tv_embedded", "web_embedded", "android_vr", "ios", "tv"]) {
+        if (!/sign in to confirm|not a bot|login_required|403|requested format|needs to be reloaded|no video formats/i.test(firstMessage)) throw firstError
+        const firstLine = (lines) => (lines.find((l) => l.includes("ERROR")) || lines[0] || "").replace(/^ERROR:\s*/, "").trim().slice(0, 160)
+        const errores = [firstLine(firstMessage.split("\n"))]
+        for (const client of ["tv_embedded", "web_embedded", "android_vr", "ios"]) {
           try {
             log(`YouTube bloqueó el cliente principal; reintentando con cliente ${client}...`)
             return await runYtDlp(target, mode, id, client)
           } catch (clientError) {
-            lastError = clientError
+            errores.push(firstLine(String(clientError?.stderr || clientError?.message || "").split("\n")))
           }
         }
-        throw lastError
+        throw new Error(errores.filter(Boolean).join(" | "))
       })
   } else {
     chain = runYtDlp(target, mode, id)
