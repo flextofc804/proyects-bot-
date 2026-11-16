@@ -987,7 +987,7 @@ async function mediaFile(videoId, kind) {
   let file = null
   if (customApiInfo()) {
     try {
-      file = await customApiDownload(videoId, kind, prefix)
+      return await customApiDownload(videoId, kind, prefix)
     } catch (e) {
       const message = String(e?.message || e)
       log(`API propia falló: ${message}`)
