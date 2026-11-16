@@ -499,22 +499,53 @@ async function searxSearchTiktok(query, base) {
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+let ddgCookies = ""
+let ddgCookiesAt = 0
+
+async function ddgCookieHeader() {
+  if (ddgCookies && Date.now() - ddgCookiesAt < 1800000) return ddgCookies
+  try {
+    const response = await fetch("https://duckduckgo.com/", {
+      headers: { "user-agent": BROWSER_UA, accept: "text/html" },
+      signal: AbortSignal.timeout(10000)
+    })
+    const setCookies = response.headers.getSetCookie ? response.headers.getSetCookie() : []
+    const jar = setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ")
+    if (jar) {
+      ddgCookies = jar
+      ddgCookiesAt = Date.now()
+    }
+  } catch {}
+  return ddgCookies
+}
+
+const BROWSER_HEADERS = {
+  "sec-fetch-dest": "document",
+  "sec-fetch-mode": "navigate",
+  "sec-fetch-site": "none",
+  "upgrade-insecure-requests": "1"
+}
+
 async function webSearchTiktok(query) {
+  const cookies = await ddgCookieHeader()
   const primary = `site:tiktok.com ${query}`
+  const ddgHeaders = { "user-agent": BROWSER_UA, ...(cookies ? { cookie: cookies } : {}), ...BROWSER_HEADERS }
+  const ddgHeadersMobile = { "user-agent": MOBILE_UA, ...(cookies ? { cookie: cookies } : {}), ...BROWSER_HEADERS }
   const attempts = [
-    ["ddg html", "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }],
-    ["ddg html movil", "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": MOBILE_UA } }],
-    ["ddg lite", "https://lite.duckduckgo.com/lite/?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }],
-    ["ddg html (dominio principal)", "https://duckduckgo.com/html/?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }],
+    ["ddg html", "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: primary }), { headers: ddgHeaders }],
+    ["ddg html movil", "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: primary }), { headers: ddgHeadersMobile }],
+    ["ddg lite", "https://lite.duckduckgo.com/lite/?" + new URLSearchParams({ q: primary }), { headers: ddgHeaders }],
+    ["ddg html (dominio principal)", "https://duckduckgo.com/html/?" + new URLSearchParams({ q: primary }), { headers: ddgHeaders }],
     ["searx tiekoetter", null, { searx: "https://searx.tiekoetter.com" }],
+    ["searx inetol", null, { searx: "https://search.inetol.net" }],
     ["searx paulgo", null, { searx: "https://paulgo.io" }],
     ["searx opnxng", null, { searx: "https://opnxng.com" }],
-    ["bing", "https://www.bing.com/search?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }],
-    ["google basico", "https://www.google.com/search?" + new URLSearchParams({ q: primary, gbv: "1", hl: "es" }), { headers: { "user-agent": BROWSER_UA } }],
-    ["mojeek", "https://www.mojeek.com/search?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA } }]
+    ["bing", "https://www.bing.com/search?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA, ...BROWSER_HEADERS } }],
+    ["google basico", "https://www.google.com/search?" + new URLSearchParams({ q: primary, gbv: "1", hl: "es" }), { headers: { "user-agent": BROWSER_UA, ...BROWSER_HEADERS } }],
+    ["mojeek", "https://www.mojeek.com/search?" + new URLSearchParams({ q: primary }), { headers: { "user-agent": BROWSER_UA, ...BROWSER_HEADERS } }]
   ]
   const secondary = `${query} tiktok`
-  attempts.push(["ddg html (variante)", "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: secondary }), { headers: { "user-agent": BROWSER_UA } }])
+  attempts.push(["ddg html (variante)", "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: secondary }), { headers: ddgHeaders }])
 
   const collected = new Set()
   const errors = []
@@ -536,7 +567,7 @@ async function webSearchTiktok(query) {
       await pause(1200)
     }
   }
-  if (!collected.size) throw new Error(errors.slice(0, 5).join(" | ") || "sin resultados")
+  if (!collected.size) throw new Error(errors.slice(0, 6).join(" | ") || "sin resultados")
   return resultsFromLinks([...collected])
 }
 
