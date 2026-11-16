@@ -456,60 +456,111 @@ function tiktokLinksFromHtml(html) {
   return [...found]
 }
 
-async function webSearchTiktok(query) {
-  const endpoints = [
-    "https://lite.duckduckgo.com/lite/?" + new URLSearchParams({ q: `site:tiktok.com ${query}` }),
-    "https://html.duckduckgo.com/html/?" + new URLSearchParams({ q: `site:tiktok.com ${query}` })
-  ]
-  let lastStatus = ""
-  for (const searchUrl of endpoints) {
-    try {
-      const response = await fetch(searchUrl, {
-        headers: { "user-agent": BROWSER_UA, "accept-language": "es-ES,es;q=0.9" },
-        signal: AbortSignal.timeout(25000)
-      })
-      if (!response.ok) {
-        lastStatus = `HTTP ${response.status}`
-        continue
-      }
-      const html = await response.text()
-      const links = tiktokLinksFromHtml(html)
-      if (links.length) {
-        return links.slice(0, 8).map((link) => {
-          const handle = link.match(/tiktok\.com\/(@[\w.\-]+)\//i)?.[1] || ""
-          return { title: `video de TikTok ${handle}`, url: link, play: "", cover: "", author: handle, duration: 0 }
-        })
-      }
-      lastStatus = "la pagina no trajo enlaces de TikTok"
-    } catch (e) {
-      lastStatus = String(e?.message || e).slice(0, 120)
-    }
-  }
-  throw new Error(lastStatus || "sin respuesta")
+const MOBILE_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+
+function resultsFromLinks(links) {
+  return [...new Set(links)].slice(0, 8).map((link) => {
+    const handle = link.match(/tiktok\.com\/(@[\w.\-]+)\//i)?.[1] || ""
+    return { title: `video de TikTok ${handle}`, url: link, play: "", cover: "", author: handle, duration: 0 }
+  })
 }
 
-async function bingSearchTiktok(query) {
-  const searchUrl = "https://www.bing.com/search?" + new URLSearchParams({ q: `site:tiktok.com ${query}`, count: "20" })
+async function fetchEngine(searchUrl, options) {
   const response = await fetch(searchUrl, {
-    headers: { "user-agent": BROWSER_UA, "accept-language": "es-ES,es;q=0.9", accept: "text/html" },
-    signal: AbortSignal.timeout(25000)
+    method: options?.method || "GET",
+    headers: { "accept-language": "es-ES,es;q=0.9", accept: "text/html", ...(options?.headers || {}) },
+    body: options?.body,
+    signal: AbortSignal.timeout(12000)
   })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   const html = await response.text()
   const links = tiktokLinksFromHtml(html)
-  if (!links.length) throw new Error("la pagina no trajo enlaces de TikTok")
-  return links.slice(0, 8).map((link) => {
-    const handle = link.match(/tiktok\.com\/(@[\w.\-]+)\//i)?.[1] || ""
-    return { title: `video de TikTok ${handle}`, url: link, play: "", cover: "", author: handle, duration: 0 }
-  })
+  if (!links.length) throw new Error("sin enlaces de TikTok en la respuesta")
+  return links
+}
+
+async function webSearchTiktok(query) {
+  const variants = [`site:tiktok.com ${query}`, `${query} site:www.tiktok.com`, `${query} tiktok`]
+  const attempts = []
+  for (const v of variants) {
+    const qs = new URLSearchParams({ q: v }).toString()
+    attempts.push(["ddg html", "https://html.duckduckgo.com/html/?" + qs, { headers: { "user-agent": BROWSER_UA } }])
+    attempts.push(["ddg html movil", "https://html.duckduckgo.com/html/?" + qs, { headers: { "user-agent": MOBILE_UA } }])
+    attempts.push(["ddg lite", "https://lite.duckduckgo.com/lite/?" + qs, { headers: { "user-agent": BROWSER_UA } }])
+    attempts.push(["ddg lite movil", "https://lite.duckduckgo.com/lite/?" + qs, { headers: { "user-agent": MOBILE_UA } }])
+  }
+  attempts.push(["bing", "https://www.bing.com/search?" + new URLSearchParams({ q: `site:tiktok.com ${query}` }), { headers: { "user-agent": BROWSER_UA } }])
+  attempts.push(["google", "https://www.google.com/search?" + new URLSearchParams({ q: `site:tiktok.com ${query}`, gbv: "1", hl: "es" }), { headers: { "user-agent": BROWSER_UA } }])
+  attempts.push(["mojeek", "https://www.mojeek.com/search?" + new URLSearchParams({ q: `site:tiktok.com ${query}` }), { headers: { "user-agent": BROWSER_UA } }])
+
+  const collected = new Set()
+  const errors = []
+  const deadline = Date.now() + 70000
+  for (const [name, url, options] of attempts) {
+    if (Date.now() > deadline) {
+      errors.push("tiempo de busqueda agotado")
+      break
+    }
+    try {
+      const links = await fetchEngine(url, options)
+      links.forEach((l) => collected.add(l))
+      if (collected.size >= 5) break
+    } catch (e) {
+      errors.push(`${name}: ${String(e?.message || e).slice(0, 80)}`)
+    }
+  }
+  if (!collected.size) throw new Error(errors.slice(0, 5).join(" | ") || "sin resultados")
+  return resultsFromLinks([...collected])
+}
+
+function deepFindItem(node) {
+  if (!node || typeof node !== "object") return null
+  if (node.video && node.desc !== undefined && node.id) return node
+  for (const key of Object.keys(node)) {
+    const found = deepFindItem(node[key])
+    if (found) return found
+  }
+  return null
+}
+
+async function enrichTiktokResult(result) {
+  try {
+    const response = await fetch(result.url, {
+      headers: { "user-agent": BROWSER_UA, "accept-language": "es-ES,es;q=0.9", referer: "https://www.tiktok.com/" },
+      signal: AbortSignal.timeout(15000)
+    })
+    if (!response.ok) return result
+    const html = await response.text()
+    const match = html.match(/__UNIVERSAL_DATA_FOR_REHYDRATION__[^>]*>([\s\S]*?)<\/script>/)
+    if (!match) return result
+    const data = JSON.parse(match[1])
+    const item = deepFindItem(data?.__DEFAULT_SCOPE__ || data)
+    if (!item) return result
+    const desc = String(item.desc || "").replace(/\s+/g, " ").trim()
+    if (desc) result.title = desc.slice(0, 200)
+    const handle = item.author?.unique_id || item.author?.uniqueId || ""
+    const nickname = item.author?.nickname || ""
+    if (handle) result.author = "@" + handle + (nickname && nickname !== handle ? ` (${nickname})` : "")
+    const tags = (result.title.match(/#[\p{L}\p{N}_]+/gu) || []).slice(0, 5)
+    if (tags.length) result.tags = tags
+    const cover = item.video?.cover || item.video?.originCover || item.video?.dynamicCover
+    if (cover) result.cover = String(cover).replace(/\\u002F/gi, "/")
+    const duration = Number(item.video?.duration) || 0
+    if (duration) result.duration = duration
+  } catch {}
+  return result
+}
+
+async function enrichTiktokResults(results) {
+  const settled = await Promise.allSettled(results.map((r) => enrichTiktokResult(r)))
+  return settled.map((s) => (s.status === "fulfilled" ? s.value : null)).filter(Boolean)
 }
 
 async function tiktokSearch(query) {
   const providers = [
     ["tiktok search", () => tikwmSearch(query, "https://www.tikwm.com")],
     ["tiktok search (espejo)", () => tikwmSearch(query, "https://api.tikwm.com")],
-    ["buscador web", () => webSearchTiktok(query)],
-    ["buscador bing", () => bingSearchTiktok(query)]
+    ["buscador web", () => webSearchTiktok(query)]
   ]
   const errors = []
   for (const [name, run] of providers) {
@@ -570,8 +621,9 @@ const server = http.createServer(async (req, res) => {
     }
     log(`b\u00fasqueda TikTok: ${query}`)
     tiktokSearch(query)
-      .then((results) => {
-        const safe = results.filter((r) => !isNsfw(r.title) && !isNsfw(r.author)).slice(0, 5)
+      .then(async (results) => {
+        const enriched = await enrichTiktokResults(results)
+        const safe = enriched.filter((r) => !isNsfw(r.title) && !isNsfw(r.author)).slice(0, 5)
         if (!safe.length) {
           sendJson(res, 200, { ok: false, error: "sin resultados" })
           return
