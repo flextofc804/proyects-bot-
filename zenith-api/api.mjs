@@ -19,7 +19,9 @@ const port = Number(process.env.PORT || 3333)
 const HOSTS_OK = [
   "youtube.com", "www.youtube.com", "youtu.be", "www.youtu.be", "music.youtube.com",
   "tiktok.com", "www.tiktok.com", "vm.tiktok.com", "vt.tiktok.com",
-  "instagram.com", "www.instagram.com"
+  "instagram.com", "www.instagram.com",
+  "twitter.com", "www.twitter.com", "mobile.twitter.com", "x.com", "www.x.com", "mobile.x.com",
+  "facebook.com", "www.facebook.com", "m.facebook.com", "fb.com", "www.fb.com", "fb.watch"
 ]
 
 const CONTENT_TYPES = {
