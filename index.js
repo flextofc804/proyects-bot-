@@ -152,10 +152,24 @@ async function stickerToImage(buffer) {
 }
 
 const MENU_IMAGE = [
-  path.join(process.cwd(), "menu.jpg"),
-  path.join(path.dirname(fileURLToPath(import.meta.url)), "menu.jpg"),
-  "/home/container/menu.jpg"
-].find((p) => fs.existsSync(p)) || ""
+  "menu.jpg",
+  "menu.png",
+  "menu.jpeg",
+  "descarga.jpg",
+  "portada.jpg"
+]
+  .flatMap((name) => [
+    path.join(process.cwd(), name),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), name),
+    path.join("/home/container", name)
+  ])
+  .find((p) => fs.existsSync(p)) || ""
+
+if (MENU_IMAGE) {
+  console.log(`[MENU] imagen del menú encontrada: ${MENU_IMAGE}`)
+} else {
+  console.log("[MENU] sin imagen: subí menu.jpg a la carpeta del bot para que el menú salga con imagen")
+}
 const searchHistory = new Map()
 
 const config = {
@@ -953,38 +967,22 @@ async function sendMenuInteractive(sock, from, msg, menuText, opts = {}) {
 
 async function enviarMenuPrincipal(sock, from, msg) {
   const text = renderMenuHome()
-  const isGroupChat = from.endsWith("@g.us")
   await startTyping(sock, from)
   await sleep(350 + Math.floor(Math.random() * 400))
-  if (isGroupChat) {
+  try {
     if (MENU_IMAGE) {
       await sock.sendMessage(from, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
     } else {
       await sock.sendMessage(from, { text }, { quoted: msg })
     }
-    try {
-      await sendMenuInteractive(sock, from, msg, "Tocá el botón para ver todos los comandos 👇", { withImage: false })
-    } catch (e) {
-      console.log("botón de menú en grupo falló:", e?.message || e)
-    }
-    await stopTyping(sock, from)
-    return
+  } catch (e) {
+    console.log("menú con imagen falló, mandando solo texto:", e?.message || e)
+    await sock.sendMessage(from, { text }, { quoted: msg })
   }
-  let interactiveOk = false
-  if (MENU_IMAGE) {
-    try {
-      await sendMenuInteractive(sock, from, msg, text)
-      interactiveOk = true
-    } catch (e) {
-      console.log("menú interactivo con imagen falló:", e?.message || e)
-    }
-  }
-  if (!interactiveOk) {
-    if (MENU_IMAGE) {
-      await sock.sendMessage(from, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
-    } else {
-      await sock.sendMessage(from, { text }, { quoted: msg })
-    }
+  try {
+    await sendMenuInteractive(sock, from, msg, "Tocá el botón para ver todos los comandos 👇", { withImage: false })
+  } catch (e) {
+    console.log("botón de menú interactivo falló:", e?.message || e)
     try {
       await sendList(sock, from, {
         text: "Tocá el botón para ver todos los comandos 👇",
@@ -997,8 +995,8 @@ async function enviarMenuPrincipal(sock, from, msg) {
         ],
         quoted: msg
       })
-    } catch (e) {
-      console.log("botón de menú no soportado por este WhatsApp:", e?.message || e)
+    } catch (e2) {
+      console.log("botón de menú no soportado por este WhatsApp:", e2?.message || e2)
     }
   }
   await stopTyping(sock, from)
