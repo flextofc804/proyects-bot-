@@ -882,6 +882,14 @@ async function downloadApiFile(url, destination, kind) {
     } catch {}
     throw new Error(message)
   }
+  if (/json/i.test(response.headers.get("content-type") || "")) {
+    let message = "error de la API propia"
+    try {
+      const data = await response.json()
+      message = data.error || message
+    } catch {}
+    throw new Error(message)
+  }
   const disposition = response.headers.get("content-disposition") || ""
   const nameMatch = disposition.match(/filename="?([^";]+)"?/i)
   const extension =
