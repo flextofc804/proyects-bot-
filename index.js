@@ -904,7 +904,12 @@ async function enviarTextoMenu(sock, from, msg, text, withImage = false) {
   await sleep(400 + Math.floor(Math.random() * 500))
   if (withImage && MENU_IMAGE2) {
     try {
-      await sock.sendMessage(from, { image: { url: MENU_IMAGE2 } }, { quoted: msg })
+      const header = text.split("\n").slice(0, 3).join("\n")
+      await sock.sendMessage(
+        from,
+        { image: { url: MENU_IMAGE2 }, caption: `${header}\n\n⬇️ El catálogo completo sigue en el mensaje de abajo` },
+        { quoted: msg }
+      )
     } catch (e) {
       console.log("imagen del catálogo falló:", e?.message || e)
     }
