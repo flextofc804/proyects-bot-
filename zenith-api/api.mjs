@@ -151,7 +151,7 @@ function cleanDownloads(id) {
   } catch {}
 }
 
-async function runYtDlp(url, mode, id) {
+async function runYtDlp(url, mode, id, client) {
   const binary = await ensureYtDlp()
   const args = [
     "--no-playlist", "--no-progress", "--no-warnings", "--no-mtime",
@@ -159,6 +159,7 @@ async function runYtDlp(url, mode, id) {
     "-f", formatFor(mode),
     "-o", path.join(root, `api_dl_${id}.%(ext)s`)
   ]
+  if (client) args.push("--extractor-args", `youtube:player_client=${client}`)
   if (fs.existsSync(cookiesPath)) args.push("--cookies", cookiesPath)
   args.push(url)
   await execFileAsync(binary, args, { timeout: 600000, maxBuffer: 1024 * 1024 * 8, cwd: root })
@@ -376,7 +377,22 @@ const server = http.createServer(async (req, res) => {
       return runYtDlp(target, mode, id)
     })
   } else if (isYouTube) {
-    chain = ensurePotServer().then(() => runYtDlp(target, mode, id))
+    chain = ensurePotServer()
+      .then(() => runYtDlp(target, mode, id))
+      .catch(async (firstError) => {
+        const firstMessage = String(firstError?.stderr || firstError?.message || "")
+        if (!/sign in to confirm|not a bot|login_required|403|requested format/i.test(firstMessage)) throw firstError
+        let lastError = firstError
+        for (const client of ["tv_embedded", "web_embedded", "android_vr", "ios", "tv"]) {
+          try {
+            log(`YouTube bloqueó el cliente principal; reintentando con cliente ${client}...`)
+            return await runYtDlp(target, mode, id, client)
+          } catch (clientError) {
+            lastError = clientError
+          }
+        }
+        throw lastError
+      })
   } else {
     chain = runYtDlp(target, mode, id)
   }
