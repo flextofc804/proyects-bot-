@@ -6,7 +6,7 @@ import makeWASocket, {
   downloadMediaMessage,
   getContentType
 } from "@whiskeysockets/baileys"
-import { sendInteractive, singleSelectButton } from 'baileys-buttons'
+import { sendList } from 'baileys-buttons'
 import pino from "pino"
 import fs from "fs"
 import path from "path"
@@ -897,44 +897,20 @@ async function enviarMenuPrincipal(sock, from, msg) {
   } else {
     await sock.sendMessage(from, { text }, { quoted: msg })
   }
-  const rows = renderMenuListRows()
-  const sections = [{ title: "📂 Categorías", rows: rows.map(({ title, rowId, description }) => ({ title, description, id: rowId })) }]
   try {
-    await sock.sendMessage(
-      from,
-      {
-        interactiveMessage: {
-          body: { text: "Tocá el botón para ver todos los comandos 👇" },
-          footer: { text: "ZENITH Bot" },
-          nativeFlowMessage: {
-            buttons: [
-              {
-                name: "single_select",
-                buttonParamsJson: JSON.stringify({ title: "Ver comandos 📜", sections })
-              }
-            ]
-          }
-        }
-      },
-      { quoted: msg }
-    )
-  } catch (e) {
-    console.log("botón interactivo falló, probando formato viejo:", e?.message || e)
-    try {
-      await sock.sendMessage(
-        from,
+    await sendList(sock, from, {
+      text: "Tocá el botón para ver todos los comandos 👇",
+      buttonText: "Ver comandos 📜",
+      sections: [
         {
-          text: "Tocá el botón para ver todos los comandos 👇",
-          footer: "ZENITH Bot",
-          title: "📜 MENÚ DE COMANDOS",
-          buttonText: "Ver comandos 📜",
-          sections: [{ title: "📂 Categorías", rows }]
-        },
-        { quoted: msg }
-      )
-    } catch (e2) {
-      console.log("botón de menú no soportado por este WhatsApp:", e2?.message || e2)
-    }
+          title: "📂 Categorías",
+          rows: renderMenuListRows().map(({ title, rowId, description }) => ({ id: rowId, title, description }))
+        }
+      ],
+      quoted: msg
+    })
+  } catch (e) {
+    console.log("botón de menú no soportado por este WhatsApp:", e?.message || e)
   }
   await stopTyping(sock, from)
 }
