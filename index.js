@@ -1340,20 +1340,50 @@ async function startBot() {
               await reply(`⚠️ No pude completar la búsqueda.\nMotivo técnico: ${motivo}`)
               break
             }
-            const results = (data.results || []).slice(0, 5)
+            const results = (data.results || []).filter((r) => !isNsfwText(r.title) && !isNsfwText(r.author)).slice(0, 5)
             if (!results.length) {
-              await reply(`😶 No encontré videos de TikTok para "${query}". Probá con otras palabras.`)
+              await reply(`😐 No encontré videos de TikTok para "${query}". Probá con otras palabras.`)
               break
             }
-            const lines = [`🔍 *TikTok · búsqueda:* "${query}"`, ""]
-            results.forEach((r, i) => {
-              lines.push(`*${i + 1}.* ${String(r.title || "").slice(0, 180)}`)
-              if (r.author) lines.push(`👤 ${r.author}${r.duration ? ` · ⏱ ${r.duration}s` : ""}`)
-              lines.push(`🔗 ${r.url}`)
-              lines.push("")
-            })
-            lines.push("💡 Para descargar alguno, copiá su enlace y usá #tiktok <enlace>")
-            await reply(lines.join("\n").trim())
+            const { customApiDownloadUrl } = await import("./youtube.js")
+            const { tiktokDownload } = await import("./downloader.js")
+            await reply(`⬇️ Encontré ${results.length} videos. Los descargo y te los mando en MP4 (puede tardar unos minutos)...`)
+            let enviados = 0
+            for (let i = 0; i < results.length; i++) {
+              const r = results[i]
+              let file = null
+              try {
+                file = await customApiDownloadUrl(r.url, "video", `zenith_ttsearch_${Date.now()}_${i}`)
+              } catch (apiError) {
+                console.log("ttsearch: API propia falló para", r.url, "→", apiError?.message || apiError)
+              }
+              if (!file) {
+                try {
+                  const scraped = await tiktokDownload(r.url)
+                  if (scraped.type === "video") file = scraped.file
+                  else if (Array.isArray(scraped.files) && scraped.files.length) file = scraped.files[0]
+                } catch (scrapeError) {
+                  console.log("ttsearch: scraping falló para", r.url, "→", scrapeError?.message || scrapeError)
+                }
+              }
+              if (file) {
+                try {
+                  const buffer = fs.readFileSync(file)
+                  const caption = `🎬 *${i + 1}/${results.length}* · "${query}"\n${String(r.title || "").slice(0, 150)}${r.author ? `\n👤 ${r.author}` : ""}`
+                  await sock.sendMessage(from, { video: buffer, mimetype: "video/mp4", caption }, { quoted: msg })
+                  enviados++
+                } catch (sendError) {
+                  console.log("ttsearch: error al enviar video", i + 1, "→", sendError?.message || sendError)
+                  await reply(`⚠️ No pude mandar el video ${i + 1}. Enlace: ${r.url}`)
+                }
+                removeFile(file)
+              } else {
+                await reply(`⚠️ No pude descargar el video ${i + 1}. Enlace: ${r.url}`)
+              }
+            }
+            if (!enviados) {
+              await reply(`⚠️ No pude descargar ninguno de los ${results.length} videos. Probá de nuevo en un rato o descargalos con #tiktok <enlace>.`)
+            }
           } catch (e) {
             await reply(`⚠️ La búsqueda falló.\nMotivo técnico: ${String(e?.message || e).slice(0, 180)}`)
           }

@@ -488,11 +488,28 @@ async function webSearchTiktok(query) {
   throw new Error(lastStatus || "sin respuesta")
 }
 
+async function bingSearchTiktok(query) {
+  const searchUrl = "https://www.bing.com/search?" + new URLSearchParams({ q: `site:tiktok.com ${query}`, count: "20" })
+  const response = await fetch(searchUrl, {
+    headers: { "user-agent": BROWSER_UA, "accept-language": "es-ES,es;q=0.9", accept: "text/html" },
+    signal: AbortSignal.timeout(25000)
+  })
+  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  const html = await response.text()
+  const links = tiktokLinksFromHtml(html)
+  if (!links.length) throw new Error("la pagina no trajo enlaces de TikTok")
+  return links.slice(0, 8).map((link) => {
+    const handle = link.match(/tiktok\.com\/(@[\w.\-]+)\//i)?.[1] || ""
+    return { title: `video de TikTok ${handle}`, url: link, play: "", cover: "", author: handle, duration: 0 }
+  })
+}
+
 async function tiktokSearch(query) {
   const providers = [
     ["tiktok search", () => tikwmSearch(query, "https://www.tikwm.com")],
     ["tiktok search (espejo)", () => tikwmSearch(query, "https://api.tikwm.com")],
-    ["buscador web", () => webSearchTiktok(query)]
+    ["buscador web", () => webSearchTiktok(query)],
+    ["buscador bing", () => bingSearchTiktok(query)]
   ]
   const errors = []
   for (const [name, run] of providers) {
