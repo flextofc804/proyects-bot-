@@ -2224,6 +2224,25 @@ case "video":
           try {
             await reply("Descargando de TikTok...")
             const { tiktokDownload } = await import("./downloader.js")
+            const { customApiInfo, customApiDownloadUrl } = await import("./youtube.js")
+            let ttApiFile = null
+            if (customApiInfo()) {
+              try {
+                ttApiFile = await customApiDownloadUrl(text, "video", `zenith_tiktok_${Date.now()}`)
+              } catch (ttApiError) {
+                console.log("API propia tiktok falló:", ttApiError?.message || ttApiError)
+              }
+            }
+            if (ttApiFile) {
+              const ttBuffer = fs.readFileSync(ttApiFile)
+              await sock.sendMessage(
+                from,
+                { video: ttBuffer, mimetype: "video/mp4", caption: "ZENITH - TikTok" },
+                { quoted: msg }
+              )
+              removeFile(ttApiFile)
+              break
+            }
             const ttResult = await tiktokDownload(text)
             if (ttResult.type === "video") {
               const ttBuffer = fs.readFileSync(ttResult.file)
@@ -2278,6 +2297,25 @@ case "video":
           try {
             await reply("Descargando de Instagram...")
             const { instagramDownload } = await import("./downloader.js")
+            const { customApiInfo, customApiDownloadUrl } = await import("./youtube.js")
+            let igApiFile = null
+            if (customApiInfo()) {
+              try {
+                igApiFile = await customApiDownloadUrl(text, "video", `zenith_instagram_${Date.now()}`)
+              } catch (igApiError) {
+                console.log("API propia instagram falló:", igApiError?.message || igApiError)
+              }
+            }
+            if (igApiFile) {
+              const igBuffer = fs.readFileSync(igApiFile)
+              await sock.sendMessage(
+                from,
+                { video: igBuffer, mimetype: "video/mp4", caption: "ZENITH - Instagram" },
+                { quoted: msg }
+              )
+              removeFile(igApiFile)
+              break
+            }
             const igResult = await instagramDownload(text)
             if (igResult.type === "video") {
               const igBuffer = fs.readFileSync(igResult.file)
