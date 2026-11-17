@@ -9,6 +9,7 @@ import makeWASocket, {
 import { sendList } from 'baileys-buttons'
 import pino from "pino"
 import fs from "fs"
+import crypto from "crypto"
 import path from "path"
 import { exec } from "child_process"
 import { promisify } from "util"
@@ -504,23 +505,28 @@ function renderMenuListRows() {
 }
 
 async function sendAlbumVideos(sock, jid, items) {
-  const { generateWAMessageFromContent, generateWAMessage } = await import("@whiskeysockets/baileys")
+  const { generateWAMessageFromContent, generateWAMessage, jidNormalizedUser } = await import("@whiskeysockets/baileys")
   const videoCount = items.filter((i) => i.kind === "video").length
   const imageCount = items.length - videoCount
   const album = generateWAMessageFromContent(
     jid,
-    { albumMessage: { expectedImageCount: imageCount, expectedVideoCount: videoCount } },
-    { userJid: jid, upload: sock.waUploadToServer }
+    {
+      messageContextInfo: { messageSecret: crypto.randomBytes(32) },
+      albumMessage: { expectedImageCount: imageCount, expectedVideoCount: videoCount }
+    },
+    { userJid: jidNormalizedUser(sock.user.id), upload: sock.waUploadToServer }
   )
   await sock.relayMessage(jid, album.message, { messageId: album.key.id })
   for (const item of items) {
     const content =
       item.kind === "video"
-        ? { video: { url: item.file }, caption: item.caption }
-        : { image: { url: item.file }, caption: item.caption }
+        ? { video: { url: item.file }, mimetype: "video/mp4" }
+        : { image: { url: item.file } }
+    if (item.caption) content.caption = item.caption
     const mediaMsg = await generateWAMessage(jid, content, { upload: sock.waUploadToServer })
     mediaMsg.message.messageContextInfo = {
-      messageAssociation: { associationType: 15, parentMessageKey: album.key }
+      messageSecret: crypto.randomBytes(32),
+      messageAssociation: { associationType: 1, parentMessageKey: album.key }
     }
     await sock.relayMessage(jid, mediaMsg.message, { messageId: mediaMsg.key.id })
   }
@@ -1024,11 +1030,7 @@ async function startBot() {
                 }
               }
               if (file) {
-                bajados.push({
-                  kind: "video",
-                  file,
-                  caption: `🎬 *${bajados.length + 1}/${results.length}* · "${query}"\n${String(r.title || "").slice(0, 150)}${r.author ? `\n👤 ${r.author}` : ""}`
-                })
+                bajados.push({ kind: "video", file, caption: "" })
               } else {
                 console.log(`ttsearch: video ${i + 1} sin fuente descargable → ${r.url}`)
               }
@@ -1043,7 +1045,7 @@ async function startBot() {
               console.log("ttsearch: álbum no soportado, mandando de a uno →", albumError?.message || albumError)
               for (const item of bajados) {
                 try {
-                  await sock.sendMessage(from, { video: { url: item.file }, mimetype: "video/mp4", caption: item.caption }, { quoted: msg })
+                  await sock.sendMessage(from, { video: { url: item.file }, mimetype: "video/mp4" }, { quoted: msg })
                 } catch (sendError) {
                   console.log("ttsearch: error al enviar video →", sendError?.message || sendError)
                 }
@@ -2048,21 +2050,26 @@ case "video":
       return
     }
     const videoFile = await mediaFile(videoVideoId, "video")
-    const videoBuffer = fs.readFileSync(videoFile)
     const videoExt = String(path.extname(videoFile) || "").toLowerCase()
     const videoSize = fs.statSync(videoFile).size
-    if (videoSize > 100 * 1024 * 1024) {
-      await sock.sendMessage(
+    const sendVideoDocumento = () =>
+      sock.sendMessage(
         from,
-        { document: videoBuffer, mimetype: "video/mp4", fileName: `zenith_video${videoExt}`, caption: "ZENITH - Video pesado enviado como documento" },
+        { document: { url: videoFile }, mimetype: "video/mp4", fileName: `zenith_video${videoExt || ".mp4"}`, caption: "ZENITH - Video pesado enviado como documento" },
         { quoted: msg }
       )
+    if (videoSize > 50 * 1024 * 1024) {
+      await sendVideoDocumento()
     } else {
-      await sock.sendMessage(
-        from,
-        { video: videoBuffer, mimetype: videoExt === ".webm" ? "video/webm" : "video/mp4", caption: "ZENITH - Video" },
-        { quoted: msg }
-      )
+      try {
+        await sock.sendMessage(
+          from,
+          { video: { url: videoFile }, mimetype: videoExt === ".webm" ? "video/webm" : "video/mp4", caption: "ZENITH - Video" },
+          { quoted: msg }
+        )
+      } catch {
+        await sendVideoDocumento()
+      }
     }
     removeFile(videoFile)
   } catch (e) {
