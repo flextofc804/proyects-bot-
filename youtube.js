@@ -1052,7 +1052,11 @@ async function zetaCoreTiktok(url, prefix) {
 
 async function zetaCoreX(url, prefix) {
   const data = await zetaCoreJson("/xvideo", new URLSearchParams({ query: url }))
-  const direct = data.best || (Array.isArray(data.videos) && data.videos.length ? data.videos[0].url : null)
+  const mp4s = (Array.isArray(data.videos) ? data.videos : [])
+    .map((v) => String(v?.url || ""))
+    .filter((u) => u && !/\.m3u8/i.test(u))
+  const bestSinM3u8 = data.best && !/\.m3u8/i.test(String(data.best)) ? String(data.best) : null
+  const direct = mp4s[mp4s.length - 1] || bestSinM3u8
   if (!direct) throw new Error("el tweet no tiene video descargable")
   return zetaCoreSaveFile(direct, prefix, "video")
 }
