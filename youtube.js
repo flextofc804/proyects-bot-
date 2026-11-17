@@ -1075,14 +1075,6 @@ async function mediaFile(videoId, kind) {
   const prefix = `zenith_${kind}_${Date.now()}_${Math.floor(Math.random() * 100000)}`
   const errors = []
   let file = null
-  try {
-    return await zetaCoreYt(videoId, kind, prefix)
-  } catch (e) {
-    const message = String(e?.message || e)
-    log(`ZETA-CORE falló: ${message}`)
-    errors.push(`ZETA-CORE: ${message}`)
-    cleanPrefix(prefix)
-  }
   if (customApiInfo()) {
     try {
       return await customApiDownload(videoId, kind, prefix)
@@ -1092,6 +1084,14 @@ async function mediaFile(videoId, kind) {
       errors.push(`API propia: ${message}`)
       cleanPrefix(prefix)
     }
+  }
+  try {
+    return await zetaCoreYt(videoId, kind, prefix)
+  } catch (e) {
+    const message = String(e?.message || e)
+    log(`ZETA-CORE falló: ${message}`)
+    errors.push(`ZETA-CORE: ${message}`)
+    cleanPrefix(prefix)
   }
   const localBlocked = Date.now() < ytBlockUntil
   if (localBlocked) {
