@@ -1033,8 +1033,14 @@ async function zetaCoreYt(query, kind, prefix) {
   try {
     return await zetaCoreDl(data.videoId || query, kind, prefix)
   } catch (dlError) {
-    log(`ZETA-CORE /dl falló (${String(dlError?.message || dlError).slice(0, 80)}); probando enlace directo...`)
-    return zetaCoreSaveFile(data.descarga_directa || data.link, prefix, kind)
+    const dlMsg = String(dlError?.message || dlError)
+    log(`ZETA-CORE /dl falló (${dlMsg.slice(0, 80)}); probando enlace directo...`)
+    try {
+      return await zetaCoreSaveFile(data.descarga_directa || data.link, prefix, kind)
+    } catch (directError) {
+      if (dlMsg.includes("falta la clave")) throw dlError
+      throw directError
+    }
   }
 }
 
