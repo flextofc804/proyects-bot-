@@ -944,25 +944,33 @@ async function customApiDownload(videoId, kind, prefix) {
 
 const ZETA_CORE_DEFAULT = "https://zeta-core-api.vercel.app"
 
-function zetaCoreBase() {
+function zetaCoreConfig() {
   try {
     const file = path.join(root, "zeta-core.txt")
     if (fs.existsSync(file)) {
-      const line = fs
+      const lines = fs
         .readFileSync(file, "utf8")
         .split(/\r?\n/)
         .map((l) => l.trim())
-        .filter(Boolean)[0]
-      if (line && /^https?:\/\//.test(line)) return line.replace(/\/+$/, "")
+        .filter(Boolean)
+      const base = lines[0] && /^https?:\/\//.test(lines[0]) ? lines[0].replace(/\/+$/, "") : ZETA_CORE_DEFAULT
+      return { base, bypass: lines[1] || null }
     }
   } catch {}
-  return ZETA_CORE_DEFAULT
+  return { base: ZETA_CORE_DEFAULT, bypass: null }
+}
+
+function zetaCoreBase() {
+  return zetaCoreConfig().base
 }
 
 async function zetaCoreJson(route, params, timeoutMs = 45000) {
-  const url = `${zetaCoreBase()}${route}?${params.toString()}`
+  const config = zetaCoreConfig()
+  const url = `${config.base}${route}?${params.toString()}`
+  const headers = { "User-Agent": "zenith-bot/1.0", Accept: "application/json" }
+  if (config.bypass) headers["x-vercel-protection-bypass"] = config.bypass
   const response = await fetch(url, {
-    headers: { "User-Agent": "zenith-bot/1.0", Accept: "application/json" },
+    headers,
     signal: AbortSignal.timeout(timeoutMs)
   })
   const contentType = response.headers.get("content-type") || ""
