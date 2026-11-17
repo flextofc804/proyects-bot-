@@ -1031,10 +1031,10 @@ async function zetaCoreYt(query, kind, prefix) {
   if (kind !== "audio") params.set("quality", "720p")
   const data = await zetaCoreJson(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
   try {
-    return await zetaCoreSaveFile(data.descarga_directa || data.link, prefix, kind)
-  } catch (e) {
-    log(`ZETA-CORE enlace directo falló (${String(e?.message || e).slice(0, 80)}); probando /dl de la API...`)
-    return zetaCoreDl(data.videoId || query, kind, prefix)
+    return await zetaCoreDl(data.videoId || query, kind, prefix)
+  } catch (dlError) {
+    log(`ZETA-CORE /dl falló (${String(dlError?.message || dlError).slice(0, 80)}); probando enlace directo...`)
+    return zetaCoreSaveFile(data.descarga_directa || data.link, prefix, kind)
   }
 }
 
@@ -1055,6 +1055,26 @@ async function zetaCoreX(url, prefix) {
   const direct = mp4s[mp4s.length - 1] || bestSinM3u8
   if (!direct) throw new Error("el tweet no tiene video descargable")
   return zetaCoreSaveFile(direct, prefix, "video")
+}
+
+function zetaCorePickMedia(data) {
+  const links = Array.isArray(data?.links) ? data.links : []
+  const fromLinks = links.map((l) => (typeof l === "string" ? l : l?.url)).filter((u) => /^https?:\/\//.test(String(u || "")))
+  return data?.descarga_directa || data?.link || data?.url || fromLinks[0] || null
+}
+
+async function zetaCoreInstagram(url, prefix) {
+  const data = await zetaCoreJson("/instagram", new URLSearchParams({ query: url }))
+  const direct = zetaCorePickMedia(data)
+  if (!direct) throw new Error("el post no tiene media descargable")
+  return zetaCoreSaveFile(String(direct), prefix, "video")
+}
+
+async function zetaCoreFacebook(url, prefix) {
+  const data = await zetaCoreJson("/facebook", new URLSearchParams({ query: url }))
+  const direct = zetaCorePickMedia(data)
+  if (!direct) throw new Error("el video no tiene fuente descargable")
+  return zetaCoreSaveFile(String(direct), prefix, "video")
 }
 
 async function zetaCoreTtSearch(query, limit = 5) {
@@ -1464,6 +1484,8 @@ export {
   zetaCoreDl,
   zetaCoreTiktok,
   zetaCoreX,
+  zetaCoreInstagram,
+  zetaCoreFacebook,
   zetaCoreTtSearch
 }
 
