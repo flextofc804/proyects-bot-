@@ -1058,7 +1058,7 @@ async function zetaCoreX(url, prefix) {
 }
 
 async function zetaCoreTtSearch(query, limit = 5) {
-  const data = await zetaCoreJson("/ttsearch", new URLSearchParams({ query, limit: String(limit) }))
+  const data = await zetaCoreJson("/ttsearch", new URLSearchParams({ query, limit: String(limit) }), 15000)
   const results = (Array.isArray(data.results) ? data.results : [])
     .filter((r) => r && /^\d{10,25}$/.test(String(r.videoId || "")) && /^https?:\/\//.test(String(r.url || "")))
     .slice(0, limit)
