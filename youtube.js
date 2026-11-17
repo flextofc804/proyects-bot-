@@ -1070,17 +1070,37 @@ function zetaCorePickMedia(data) {
 }
 
 async function zetaCoreInstagram(url, prefix) {
-  const data = await zetaCoreJson("/instagram", new URLSearchParams({ query: url }))
-  const direct = zetaCorePickMedia(data)
-  if (!direct) throw new Error("el post no tiene media descargable")
-  return zetaCoreSaveFile(String(direct), prefix, "video")
+  try {
+    return await zetaCoreDl(url, "instagram", prefix)
+  } catch (dlError) {
+    const dlMsg = String(dlError?.message || dlError)
+    const data = await zetaCoreJson("/instagram", new URLSearchParams({ query: url }))
+    const direct = zetaCorePickMedia(data)
+    if (!direct) throw new Error("el post no tiene media descargable")
+    try {
+      return await zetaCoreSaveFile(String(direct), prefix, "video")
+    } catch {
+      if (dlMsg.includes("falta la clave")) throw dlError
+      throw new Error("el post no tiene media descargable")
+    }
+  }
 }
 
 async function zetaCoreFacebook(url, prefix) {
-  const data = await zetaCoreJson("/facebook", new URLSearchParams({ query: url }))
-  const direct = zetaCorePickMedia(data)
-  if (!direct) throw new Error("el video no tiene fuente descargable")
-  return zetaCoreSaveFile(String(direct), prefix, "video")
+  try {
+    return await zetaCoreDl(url, "facebook", prefix)
+  } catch (dlError) {
+    const dlMsg = String(dlError?.message || dlError)
+    const data = await zetaCoreJson("/facebook", new URLSearchParams({ query: url }))
+    const direct = zetaCorePickMedia(data)
+    if (!direct) throw new Error("el video no tiene fuente descargable")
+    try {
+      return await zetaCoreSaveFile(String(direct), prefix, "video")
+    } catch {
+      if (dlMsg.includes("falta la clave")) throw dlError
+      throw new Error("el video no tiene fuente descargable")
+    }
+  }
 }
 
 async function zetaCoreTtSearch(query, limit = 5) {
