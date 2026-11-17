@@ -19,7 +19,6 @@ const YT_UA =
 const MOBILE_UA =
   "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
 
-const COBALT_BASES = ["https://rue-cobalt.xenon.zone", "https://cobaltapi.cjs.nz"]
 
 let ytBlockUntil = 0
 
@@ -849,8 +848,7 @@ async function ytDlpDownload(videoId, kind, prefix) {
     try {
       const found = await ytDlpAttempt(binary, kind, videoId, prefix, output, cookies, ffmpegFlag, client)
       if (found) return found
-    } catch (e) {
-      log(`yt-dlp cliente ${client} falló: ${String(e?.stderr || e?.message || e).split("\n")[0].slice(0, 150)}`)
+    } catch {
     }
   }
 
@@ -858,14 +856,12 @@ async function ytDlpDownload(videoId, kind, prefix) {
   if (potReady) {
     for (const client of ["web", "mweb", "web_safari", "tv", "web_embedded"]) {
       try {
-        log(`intento con PO Token (cliente ${client})...`)
         const found = await ytDlpAttempt(binary, kind, videoId, prefix, output, cookies, ffmpegFlag, client)
         if (found) {
           log(`descarga OK con PO Token (cliente ${client})`)
           return found
         }
-      } catch (e) {
-        log(`yt-dlp PO Token cliente ${client} falló: ${String(e?.stderr || e?.message || e).split("\n")[0].slice(0, 150)}`)
+      } catch {
       }
     }
   }
@@ -1075,45 +1071,6 @@ async function zetaCoreTtSearch(query, limit = 5) {
   return results
 }
 
-async function cobaltDownload(videoId, kind, prefix) {
-  const target = `https://www.youtube.com/watch?v=${videoId}`
-  const payload =
-    kind === "audio"
-      ? { url: target, downloadMode: "audio" }
-      : { url: target, downloadMode: "auto", videoQuality: "720", youtubeVideoCodec: "h264" }
-  let lastError = "sin respuesta"
-  for (const base of COBALT_BASES) {
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = await request(`${base}/`, {
-          method: "POST",
-          headers: { Accept: "application/json", "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        })
-        const data = JSON.parse(response.body || "{}")
-        if ((data.status === "tunnel" || data.status === "redirect") && data.url) {
-          const match = typeof data.filename === "string" ? data.filename.match(/\.([a-z0-9]{2,4})$/i) : null
-          const extension = match ? `.${match[1].toLowerCase()}` : kind === "audio" ? ".mp3" : ".mp4"
-          const output = path.join(root, `${prefix}${extension}`)
-          await downloadFile(data.url, output)
-          if (fs.existsSync(output) && fs.statSync(output).size > 10240) {
-            log(`descarga OK vía API pública (${base})`)
-            return output
-          }
-          removeFile(output)
-          throw new Error("archivo incompleto")
-        }
-        lastError = data.error?.code || `HTTP ${response.status}`
-      } catch (e) {
-        lastError = e?.message || String(e)
-      }
-      if (attempt < 2) await sleepMs(4000)
-    }
-    log(`API pública ${base} falló: ${lastError}`)
-  }
-  throw new Error(lastError)
-}
-
 async function mediaFile(videoId, kind) {
   const prefix = `zenith_${kind}_${Date.now()}_${Math.floor(Math.random() * 100000)}`
   const errors = []
@@ -1150,7 +1107,7 @@ async function mediaFile(videoId, kind) {
       cleanPrefix(prefix)
       if (scrapeError.includes("LOGIN_REQUIRED") || scrapeError.includes("Sign in to confirm")) {
         ytBlockUntil = Date.now() + 10 * 60 * 1000
-        log("YouTube marcó esta IP como bot: por 10 minutos las descargas van directo a la API pública")
+        log("YouTube marcó esta IP como bot: por 10 minutos las descargas saltan el scraping y yt-dlp")
       }
     }
     if (!file) {
@@ -1162,17 +1119,9 @@ async function mediaFile(videoId, kind) {
         cleanPrefix(prefix)
         if (message.includes("Sign in to confirm") || message.includes("LOGIN_REQUIRED")) {
           ytBlockUntil = Date.now() + 10 * 60 * 1000
-          log("YouTube marcó esta IP como bot: por 10 minutos las descargas van directo a la API pública")
+          log("YouTube marcó esta IP como bot: por 10 minutos las descargas saltan el scraping y yt-dlp")
         }
       }
-    }
-  }
-  if (!file) {
-    try {
-      file = await cobaltDownload(videoId, kind, prefix)
-    } catch (e) {
-      errors.push(`API pública: ${e?.message || e}`)
-      cleanPrefix(prefix)
     }
   }
   if (!file) throw new Error(errors.join(" | "))
@@ -1484,23 +1433,6 @@ export async function diagnose() {
     } catch (e) {
       lines.push(`API propia: configurada pero NO responde (${String(e?.message || e).slice(0, 60)})`)
     }
-  }
-
-  try {
-    const apiResponse = await request(`${COBALT_BASES[0]}/`, {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ url: "https://www.youtube.com/watch?v=jNQXAC9IVRw", downloadMode: "audio" })
-    })
-    const apiData = JSON.parse(apiResponse.body || "{}")
-    const apiOk = (apiData.status === "tunnel" || apiData.status === "redirect") && !!apiData.url
-    lines.push(
-      apiOk
-        ? "API pública: disponible (último recurso si YouTube bloquea todo)"
-        : `API pública: sin servicio (${apiData.error?.code || `HTTP ${apiResponse.status}`})`
-    )
-  } catch (e) {
-    lines.push(`API pública: sin conexión (${String(e?.message || e).slice(0, 80)})`)
   }
 
   try {

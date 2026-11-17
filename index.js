@@ -1975,18 +1975,12 @@ case "play":
           } catch (e) {
             const reason = String(e?.message || e)
             console.log("Error en play:", reason)
-            if (reason.includes("LOGIN_REQUIRED") || reason.includes("cookies") || reason.includes("bloqueó") || reason.includes("verificación") || reason.includes("API pública")) {
-              const hasCookies =
-                fs.existsSync(path.join(process.cwd(), "cookies.txt")) ||
-                fs.existsSync(path.join(process.cwd(), "cookies.json"))
-              await reply(
-                (hasCookies
-                  ? "⚠️ YouTube bloquea las descargas incluso con cookies.\n\n1) Regenerá tus cookies: entrá a *youtube.com* logueado desde el navegador, instalá la extensión *Get cookies.txt LOCALLY*, exportá el archivo y reemplazalo en la carpeta del bot (las cookies viejas vencen en pocos días).\n2) Si con cookies frescas sigue fallando, la IP de tu hosting está bloqueada por YouTube (pasa en hostings gratuitos): en ese caso probá correr el bot desde tu PC o un VPS con IP limpia.\n3) El bot ya intenta una API pública como último recurso y tampoco respondió: suele ser temporal, esperá unos minutos y probá de nuevo (usá #ytdebug para ver el estado)."
-                  : "⚠️ YouTube está bloqueando la IP de este servidor.\n\nSubí el archivo *cookies.txt* (o cookies.json) a la carpeta del bot y volvé a intentar: eso desbloquea las descargas.") +
-                `\n\nMotivo técnico: ${reason.slice(0, 200)}`
-              )
+            if (reason.includes("Vercel bloqueó")) {
+              await reply("⚠️ Tu API de Vercel le está bloqueando el paso al bot.\n\nArreglalo en Vercel: Settings → Deployment Protection → poner Disabled → Save → Redeploy.")
+            } else if (reason.includes("falta la clave")) {
+              await reply("⚠️ Falta la clave de descarga en el servidor.\n\nEn el archivo zeta-core.txt de la carpeta del bot tiene que estar la clave en la línea 3.")
             } else {
-              await reply(`Error al descargar el audio, intentá con otro video\n\nMotivo técnico: ${reason.slice(0, 200)}`)
+              await reply("Error al descargar el audio, intentá con otro video en unos minutos.")
             }
           }
           break
@@ -2034,18 +2028,12 @@ case "video":
   } catch (e) {
     const reason = String(e?.message || e)
     console.log("Error en mp4:", reason)
-    if (reason.includes("LOGIN_REQUIRED") || reason.includes("cookies") || reason.includes("bloqueó") || reason.includes("verificación") || reason.includes("API pública")) {
-      const hasCookies =
-        fs.existsSync(path.join(process.cwd(), "cookies.txt")) ||
-        fs.existsSync(path.join(process.cwd(), "cookies.json"))
-      await reply(
-        (hasCookies
-          ? "⚠️ YouTube bloquea las descargas incluso con cookies.\n\n1) Regenerá tus cookies: entrá a *youtube.com* logueado desde el navegador, instalá la extensión *Get cookies.txt LOCALLY*, exportá el archivo y reemplazalo en la carpeta del bot (las cookies viejas vencen en pocos días).\n2) Si con cookies frescas sigue fallando, la IP de tu hosting está bloqueada por YouTube (pasa en hostings gratuitos): en ese caso probá correr el bot desde tu PC o un VPS con IP limpia.\n3) El bot ya intenta una API pública como último recurso y tampoco respondió: suele ser temporal, esperá unos minutos y probá de nuevo (usá #ytdebug para ver el estado)."
-          : "⚠️ YouTube está bloqueando la IP de este servidor.\n\nSubí el archivo *cookies.txt* (o cookies.json) a la carpeta del bot y volvé a intentar: eso desbloquea las descargas.") +
-        `\n\nMotivo técnico: ${reason.slice(0, 200)}`
-      )
+    if (reason.includes("Vercel bloqueó")) {
+      await reply("⚠️ Tu API de Vercel le está bloqueando el paso al bot.\n\nArreglalo en Vercel: Settings → Deployment Protection → poner Disabled → Save → Redeploy.")
+    } else if (reason.includes("falta la clave")) {
+      await reply("⚠️ Falta la clave de descarga en el servidor.\n\nEn el archivo zeta-core.txt de la carpeta del bot tiene que estar la clave en la línea 3.")
     } else {
-      await reply(`Error al descargar el video, intentá con otro\n\nMotivo técnico: ${reason.slice(0, 200)}`)
+      await reply("Error al descargar el video, intentá con otro en unos minutos.")
     }
   }
   break
