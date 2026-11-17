@@ -942,6 +942,96 @@ async function customApiDownload(videoId, kind, prefix) {
   return customApiDownloadUrl(`https://www.youtube.com/watch?v=${videoId}`, kind, prefix)
 }
 
+const ZETA_CORE_DEFAULT = "https://zeta-core-api.vercel.app"
+
+function zetaCoreConfig() {
+  try {
+    const file = path.join(root, "zeta-core.txt")
+    if (fs.existsSync(file)) {
+      const lines = fs
+        .readFileSync(file, "utf8")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean)
+      const base = lines[0] && /^https?:\/\//.test(lines[0]) ? lines[0].replace(/\/+$/, "") : ZETA_CORE_DEFAULT
+      return { base, bypass: lines[1] || null }
+    }
+  } catch {}
+  return { base: ZETA_CORE_DEFAULT, bypass: null }
+}
+
+function zetaCoreBase() {
+  return zetaCoreConfig().base
+}
+
+async function zetaCoreJson(route, params, timeoutMs = 45000) {
+  const config = zetaCoreConfig()
+  const url = `${config.base}${route}?${params.toString()}`
+  const headers = { "User-Agent": "zenith-bot/1.0", Accept: "application/json" }
+  if (config.bypass) headers["x-vercel-protection-bypass"] = config.bypass
+  const response = await fetch(url, {
+    headers,
+    signal: AbortSignal.timeout(timeoutMs)
+  })
+  const contentType = response.headers.get("content-type") || ""
+  if (!/json/i.test(contentType)) {
+    throw new Error(`la API respondió HTML (HTTP ${response.status}); si está en Vercel, desactivá Deployment Protection`)
+  }
+  const data = await response.json()
+  if (!data || data.ok !== true) {
+    throw new Error(data?.error?.message || data?.message || `HTTP ${response.status}`)
+  }
+  return data
+}
+
+async function zetaCoreSaveFile(directUrl, prefix, kind) {
+  if (!directUrl || typeof directUrl !== "string") throw new Error("la API no devolvió enlace de descarga")
+  const output = path.join(root, `${prefix}.part`)
+  const file = await downloadApiFile(directUrl, output, kind)
+  if (fs.existsSync(file) && fs.statSync(file).size > 10240) {
+    log(`descarga OK vía ZETA-CORE`)
+    return file
+  }
+  removeFile(file)
+  throw new Error("archivo vacío de ZETA-CORE")
+}
+
+async function zetaCoreYt(query, kind, prefix) {
+  const params = new URLSearchParams({ query })
+  if (kind !== "audio") params.set("quality", "720p")
+  const data = await zetaCoreJson(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
+  return zetaCoreSaveFile(data.descarga_directa || data.link, prefix, kind)
+}
+
+async function zetaCoreTiktok(url, prefix) {
+  const data = await zetaCoreJson("/tiktok", new URLSearchParams({ query: url }))
+  const links = data?.data?.links || {}
+  const direct = links.hd || links.sd || links.wm || data?.data?.url || null
+  if (!direct) throw new Error("el video no tiene fuente descargable")
+  return zetaCoreSaveFile(direct, prefix, "video")
+}
+
+async function zetaCoreX(url, prefix) {
+  const data = await zetaCoreJson("/xvideo", new URLSearchParams({ query: url }))
+  const direct = data.best || (Array.isArray(data.videos) && data.videos.length ? data.videos[0].url : null)
+  if (!direct) throw new Error("el tweet no tiene video descargable")
+  return zetaCoreSaveFile(direct, prefix, "video")
+}
+
+async function zetaCoreTtSearch(query, limit = 5) {
+  const data = await zetaCoreJson("/ttsearch", new URLSearchParams({ query, limit: String(limit) }))
+  const results = (Array.isArray(data.results) ? data.results : [])
+    .filter((r) => r && /^\d{10,25}$/.test(String(r.videoId || "")) && /^https?:\/\//.test(String(r.url || "")))
+    .slice(0, limit)
+    .map((r) => ({
+      title: String(r.title || ""),
+      url: String(r.url),
+      author: r.author?.username ? `@${r.author.username}` : String(r.author?.nickname || "")
+    }))
+  if (!results.length) throw new Error("sin resultados")
+  return results
+}
+
 async function cobaltDownload(videoId, kind, prefix) {
   const target = `https://www.youtube.com/watch?v=${videoId}`
   const payload =
@@ -985,6 +1075,14 @@ async function mediaFile(videoId, kind) {
   const prefix = `zenith_${kind}_${Date.now()}_${Math.floor(Math.random() * 100000)}`
   const errors = []
   let file = null
+  try {
+    return await zetaCoreYt(videoId, kind, prefix)
+  } catch (e) {
+    const message = String(e?.message || e)
+    log(`ZETA-CORE falló: ${message}`)
+    errors.push(`ZETA-CORE: ${message}`)
+    cleanPrefix(prefix)
+  }
   if (customApiInfo()) {
     try {
       return await customApiDownload(videoId, kind, prefix)
@@ -1385,7 +1483,12 @@ export {
   patchedSearch,
   patchedStream,
   customApiInfo,
-  customApiDownloadUrl
+  customApiDownloadUrl,
+  zetaCoreBase,
+  zetaCoreYt,
+  zetaCoreTiktok,
+  zetaCoreX,
+  zetaCoreTtSearch
 }
 
 log(`cookies: ${readCookiesHeader() ? "sí" : "no (subí cookies.txt si YouTube bloquea la IP del servidor)"}`)
