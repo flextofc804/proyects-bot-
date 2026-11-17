@@ -843,7 +843,7 @@ async function ytDlpDownload(videoId, kind, prefix) {
   const cookies = cookiesFlag()
   const ffmpeg = await ensureFfmpeg()
   const ffmpegFlag = ffmpeg && ffmpeg !== "ffmpeg" ? `--ffmpeg-location "${ffmpeg}"` : ""
-  const clients = ["android_vr", "tv", "android", "ios", "mweb", "web_safari", "web_embedded", "tv_embedded"]
+  const clients = ["android_vr", "ios", "tv"]
   for (const client of clients) {
     try {
       const found = await ytDlpAttempt(binary, kind, videoId, prefix, output, cookies, ffmpegFlag, client)
@@ -854,7 +854,7 @@ async function ytDlpDownload(videoId, kind, prefix) {
 
   const potReady = await setupPotProvider()
   if (potReady) {
-    for (const client of ["web", "mweb", "web_safari", "tv", "web_embedded"]) {
+    for (const client of ["web", "mweb"]) {
       try {
         const found = await ytDlpAttempt(binary, kind, videoId, prefix, output, cookies, ffmpegFlag, client)
         if (found) {
