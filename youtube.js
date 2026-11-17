@@ -954,7 +954,14 @@ function zetaCoreConfig() {
         .map((l) => l.trim())
         .filter(Boolean)
       const base = lines[0] && /^https?:\/\//.test(lines[0]) ? lines[0].replace(/\/+$/, "") : ZETA_CORE_DEFAULT
-      return { base, bypass: lines[1] || null, dlKey: lines[2] || null }
+      const segunda = lines[1] || ""
+      const tercera = lines[2] || ""
+      const pareceBypass = /^[a-zA-Z0-9]{25,}$/.test(segunda)
+      return {
+        base,
+        bypass: pareceBypass ? segunda : null,
+        dlKey: tercera || (!pareceBypass && segunda ? segunda : null)
+      }
     }
   } catch {}
   return { base: ZETA_CORE_DEFAULT, bypass: null, dlKey: null }
@@ -975,7 +982,10 @@ async function zetaCoreJson(route, params, timeoutMs = 45000) {
   })
   const contentType = response.headers.get("content-type") || ""
   if (!/json/i.test(contentType)) {
-    throw new Error(`la API respondió HTML (HTTP ${response.status}); si está en Vercel, desactivá Deployment Protection`)
+    throw new Error(`la API respondió HTML (HTTP ${response.status}); en Vercel: Settings → Deployment Protection → poner Disabled y redeploy`)
+  }
+  if (response.status === 401) {
+    throw new Error(`Vercel bloqueó el pedido (401); en Vercel: Settings → Deployment Protection → poner Disabled y redeploy`)
   }
   const data = await response.json()
   if (!data || data.ok !== true) {
