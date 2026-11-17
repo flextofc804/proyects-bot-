@@ -2386,8 +2386,26 @@ case "video":
               })
               if (!pinRes.ok) throw new Error(`Pinterest respondió HTTP ${pinRes.status}`)
               const html = await pinRes.text()
-              const pinRegex = /https:\/\/i\.pinimg\.com\/(?:originals|736x)\/[0-9a-f/]+\.(?:jpg|png|jpeg|webp)/g
-              imagenes = [...new Set((html.match(pinRegex) || []).map((u) => u.replace(/\/(?:originals|736x)\//, "/736x/")))].slice(0, 5)
+              const marker = '<script id="__PWS_INITIAL_PROPS__" type="application/json">'
+              const markerIdx = html.indexOf(marker)
+              const fuente = markerIdx >= 0 ? html.slice(markerIdx + marker.length, html.indexOf("</script>", markerIdx)) : html
+              try {
+                const pinJson = JSON.parse(fuente)
+                const pins = pinJson?.initialReduxState?.pins || {}
+                for (const p of Object.values(pins)) {
+                  const img = String(p?.images?.["736x"]?.url || p?.images?.orig?.url || "")
+                  if (!/^https:\/\/i\.pinimg\.com\//.test(img)) continue
+                  if (isNsfwText(String(p?.description || p?.gridTitle || p?.title || ""))) continue
+                  imagenes.push(img)
+                  if (imagenes.length >= 5) break
+                }
+              } catch (pinJsonError) {
+                console.log("pin: JSON embebido no usable →", pinJsonError?.message || pinJsonError)
+              }
+              if (!imagenes.length) {
+                const pinRegex = /https:\/\/i\.pinimg\.com\/(?:originals|736x)\/[0-9a-f/]+\.(?:jpg|png|jpeg|webp)/g
+                imagenes = [...new Set((fuente.match(pinRegex) || []).map((u) => u.replace(/\/(?:originals|736x)\//, "/736x/")))].slice(0, 5)
+              }
             }
             imagenes = [...new Set(imagenes)].slice(0, 5)
             if (!imagenes.length) {
