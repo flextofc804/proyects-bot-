@@ -937,32 +937,42 @@ async function startBot() {
             break
           }
           ttSearchCooldown.set(from, nowTs)
-          const { customApiInfo } = await import("./youtube.js")
-          const api = customApiInfo()
-          if (!api) {
-            await reply("⚙️ Para usar #ttsearch necesitás tu API propia: subí el archivo api-propia.txt con la URL de tu API y su clave.")
-            break
-          }
+          const { customApiInfo, customApiDownloadUrl, zetaCoreTtSearch, zetaCoreTiktok } = await import("./youtube.js")
           await reply(`🔍 Buscando en TikTok: "${query}"...`)
           try {
-            const params = new URLSearchParams({ q: query })
-            if (api.key) params.set("key", api.key)
-            const response = await fetch(`${api.base}/search?${params.toString()}`, {
-              headers: { "bypass-tunnel-reminder": "1" },
-              signal: AbortSignal.timeout(120000)
-            })
-            const data = await response.json().catch(() => null)
-            if (!data || data.ok === false) {
-              const motivo = data?.nsfw ? "la búsqueda fue bloqueada por contenido no permitido" : data?.error || "sin respuesta de la API"
-              await reply(`⚠️ No pude completar la búsqueda.\nMotivo técnico: ${motivo}`)
-              break
+            let results = null
+            let motivoZeta = ""
+            try {
+              results = await zetaCoreTtSearch(query, 5)
+            } catch (zetaError) {
+              motivoZeta = String(zetaError?.message || zetaError)
+              console.log("ttsearch: ZETA-CORE falló →", motivoZeta)
             }
-            const results = (data.results || []).filter((r) => !isNsfwText(r.title) && !isNsfwText(r.author)).slice(0, 5)
+            if (!results) {
+              const api = customApiInfo()
+              if (!api) {
+                await reply(`⚠️ No pude completar la búsqueda.\nMotivo técnico: ${motivoZeta}`)
+                break
+              }
+              const params = new URLSearchParams({ q: query })
+              if (api.key) params.set("key", api.key)
+              const response = await fetch(`${api.base}/search?${params.toString()}`, {
+                headers: { "bypass-tunnel-reminder": "1" },
+                signal: AbortSignal.timeout(120000)
+              })
+              const data = await response.json().catch(() => null)
+              if (!data || data.ok === false) {
+                const motivo = data?.nsfw ? "la búsqueda fue bloqueada por contenido no permitido" : data?.error || "sin respuesta de la API"
+                await reply(`⚠️ No pude completar la búsqueda.\nMotivo técnico: ${motivo}`)
+                break
+              }
+              results = (data.results || []).slice(0, 5)
+            }
+            results = results.filter((r) => !isNsfwText(r.title) && !isNsfwText(r.author)).slice(0, 5)
             if (!results.length) {
               await reply(`😐 No encontré videos de TikTok para "${query}". Probá con otras palabras.`)
               break
             }
-            const { customApiDownloadUrl } = await import("./youtube.js")
             const { tiktokDownload } = await import("./downloader.js")
             await reply(`⬇️ Encontré ${results.length} videos. Los descargo y te los mando en MP4 (puede tardar unos minutos)...`)
             let enviados = 0
@@ -970,9 +980,16 @@ async function startBot() {
               const r = results[i]
               let file = null
               try {
-                file = await customApiDownloadUrl(r.url, "video", `zenith_ttsearch_${Date.now()}_${i}`)
-              } catch (apiError) {
-                console.log("ttsearch: API propia falló para", r.url, "→", apiError?.message || apiError)
+                file = await zetaCoreTiktok(r.url, `zenith_ttsearch_${Date.now()}_${i}`)
+              } catch (zetaError) {
+                console.log("ttsearch: ZETA-CORE falló para", r.url, "→", zetaError?.message || zetaError)
+              }
+              if (!file) {
+                try {
+                  file = await customApiDownloadUrl(r.url, "video", `zenith_ttsearch_${Date.now()}_${i}`)
+                } catch (apiError) {
+                  console.log("ttsearch: API propia falló para", r.url, "→", apiError?.message || apiError)
+                }
               }
               if (!file) {
                 try {
@@ -2092,9 +2109,14 @@ case "video":
           try {
             await reply("Descargando de TikTok...")
             const { tiktokDownload } = await import("./downloader.js")
-            const { customApiInfo, customApiDownloadUrl } = await import("./youtube.js")
+            const { customApiInfo, customApiDownloadUrl, zetaCoreTiktok } = await import("./youtube.js")
             let ttApiFile = null
-            if (customApiInfo()) {
+            try {
+              ttApiFile = await zetaCoreTiktok(text, `zenith_tiktok_${Date.now()}`)
+            } catch (zetaError) {
+              console.log("ZETA-CORE tiktok falló:", zetaError?.message || zetaError)
+            }
+            if (!ttApiFile && customApiInfo()) {
               try {
                 ttApiFile = await customApiDownloadUrl(text, "video", `zenith_tiktok_${Date.now()}`)
               } catch (ttApiError) {
@@ -2228,7 +2250,18 @@ case "video":
           }
           try {
             await reply("Descargando de Twitter/X...")
-            const { customApiInfo, customApiDownloadUrl } = await import("./youtube.js")
+            const { customApiInfo, customApiDownloadUrl, zetaCoreX } = await import("./youtube.js")
+            if (/https?:\/\//i.test(text)) {
+              try {
+                const twApiFile = await zetaCoreX(text, `zenith_twitter_${Date.now()}`)
+                const twBuffer = fs.readFileSync(twApiFile)
+                await sock.sendMessage(from, { video: twBuffer, mimetype: "video/mp4" }, { quoted: msg })
+                removeFile(twApiFile)
+                break
+              } catch (zetaError) {
+                console.log("ZETA-CORE twitter falló:", zetaError?.message || zetaError)
+              }
+            }
             if (customApiInfo() && /https?:\/\//i.test(text)) {
               try {
                 const twApiFile = await customApiDownloadUrl(text, "video", `zenith_twitter_${Date.now()}`)
