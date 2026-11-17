@@ -1123,6 +1123,19 @@ async function zetaCoreFacebook(url, prefix) {
   }
 }
 
+async function zetaCorePin(query, limit = 5) {
+  const data = await zetaCoreJson("/pin", new URLSearchParams({ query, limit: String(limit) }), 20000)
+  const results = (Array.isArray(data.results) ? data.results : [])
+    .map((r) => ({
+      titulo: String(r?.titulo || r?.title || r?.description || ""),
+      imagen: String(r?.imagen || r?.image || r?.url || "")
+    }))
+    .filter((r) => /^https:\/\/i\.pinimg\.com\//.test(r.imagen))
+    .slice(0, limit)
+  if (!results.length) throw new Error("sin resultados")
+  return results
+}
+
 async function zetaCoreTtSearch(query, limit = 5) {
   const data = await zetaCoreJson("/ttsearch", new URLSearchParams({ query, limit: String(limit) }), 15000)
   const results = (Array.isArray(data.results) ? data.results : [])
@@ -1532,7 +1545,8 @@ export {
   zetaCoreX,
   zetaCoreInstagram,
   zetaCoreFacebook,
-  zetaCoreTtSearch
+  zetaCoreTtSearch,
+  zetaCorePin
 }
 
 log(`cookies: ${readCookiesHeader() ? "sí" : "no (subí cookies.txt si YouTube bloquea la IP del servidor)"}`)
