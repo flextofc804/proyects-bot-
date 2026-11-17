@@ -2369,16 +2369,9 @@ case "video":
             break
           }
           pinSearchCooldown.set(from, pinTs)
-          const { zetaCorePin } = await import("./youtube.js")
           await reply(`📌 Buscando en Pinterest: "${pinQuery}"...`)
           try {
             let imagenes = []
-            try {
-              const resultados = await zetaCorePin(pinQuery, 5)
-              imagenes = resultados.filter((r) => !isNsfwText(r.titulo)).map((r) => r.imagen)
-            } catch (zetaError) {
-              console.log("pin: ZETA-CORE falló →", zetaError?.message || zetaError)
-            }
             if (!imagenes.length) {
               const pinRes = await fetch(`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(pinQuery)}`, {
                 headers: { "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36" },
@@ -3496,11 +3489,9 @@ case "video":
   sock.ev.on("messages.upsert", async (event) => {
     if (event?.type !== "notify") return
     for (const incoming of event.messages || []) {
-      try {
-        await handleIncoming(incoming)
-      } catch (error) {
+      handleIncoming(incoming).catch((error) => {
         console.error("[ZENITH] Error procesando mensaje entrante:", error)
-      }
+      })
     }
   })
 

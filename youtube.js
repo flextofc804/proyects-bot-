@@ -887,7 +887,7 @@ function extensionFromType(type, kind) {
 async function downloadApiFile(url, destination, kind, extraHeaders = {}) {
   const response = await fetch(url, {
     headers: { "User-Agent": "zenith-bot/1.0", "bypass-tunnel-reminder": "true", ...extraHeaders },
-    signal: AbortSignal.timeout(900000)
+    signal: AbortSignal.timeout(300000)
   })
   if (!response.ok) {
     let message = `HTTP ${response.status}`
