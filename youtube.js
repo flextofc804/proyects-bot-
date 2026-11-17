@@ -888,9 +888,9 @@ function extensionFromType(type, kind) {
   return kind === "audio" ? ".m4a" : ".mp4"
 }
 
-async function downloadApiFile(url, destination, kind) {
+async function downloadApiFile(url, destination, kind, extraHeaders = {}) {
   const response = await fetch(url, {
-    headers: { "User-Agent": "zenith-bot/1.0", "bypass-tunnel-reminder": "true" },
+    headers: { "User-Agent": "zenith-bot/1.0", "bypass-tunnel-reminder": "true", ...extraHeaders },
     signal: AbortSignal.timeout(900000)
   })
   if (!response.ok) {
@@ -954,10 +954,10 @@ function zetaCoreConfig() {
         .map((l) => l.trim())
         .filter(Boolean)
       const base = lines[0] && /^https?:\/\//.test(lines[0]) ? lines[0].replace(/\/+$/, "") : ZETA_CORE_DEFAULT
-      return { base, bypass: lines[1] || null }
+      return { base, bypass: lines[1] || null, dlKey: lines[2] || null }
     }
   } catch {}
-  return { base: ZETA_CORE_DEFAULT, bypass: null }
+  return { base: ZETA_CORE_DEFAULT, bypass: null, dlKey: null }
 }
 
 function zetaCoreBase() {
@@ -996,11 +996,40 @@ async function zetaCoreSaveFile(directUrl, prefix, kind) {
   throw new Error("archivo vacío de ZETA-CORE")
 }
 
+async function zetaCoreDl(query, kind, prefix) {
+  const config = zetaCoreConfig()
+  if (!config.dlKey) throw new Error("falta la clave /dl en la línea 3 de zeta-core.txt")
+  const params = new URLSearchParams({
+    query: String(query),
+    kind: kind === "audio" ? "audio" : "video",
+    key: config.dlKey
+  })
+  const url = `${config.base}/dl?${params.toString()}`
+  const output = path.join(root, `${prefix}.part`)
+  const file = await downloadApiFile(
+    url,
+    output,
+    kind,
+    config.bypass ? { "x-vercel-protection-bypass": config.bypass } : {}
+  )
+  if (fs.existsSync(file) && fs.statSync(file).size > 10240) {
+    log(`descarga OK vía ZETA-CORE /dl`)
+    return file
+  }
+  removeFile(file)
+  throw new Error("archivo vacío de ZETA-CORE /dl")
+}
+
 async function zetaCoreYt(query, kind, prefix) {
   const params = new URLSearchParams({ query })
   if (kind !== "audio") params.set("quality", "720p")
   const data = await zetaCoreJson(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
-  return zetaCoreSaveFile(data.descarga_directa || data.link, prefix, kind)
+  try {
+    return await zetaCoreSaveFile(data.descarga_directa || data.link, prefix, kind)
+  } catch (e) {
+    log(`ZETA-CORE enlace directo falló (${String(e?.message || e).slice(0, 80)}); probando /dl de la API...`)
+    return zetaCoreDl(data.videoId || query, kind, prefix)
+  }
 }
 
 async function zetaCoreTiktok(url, prefix) {
@@ -1486,6 +1515,7 @@ export {
   customApiDownloadUrl,
   zetaCoreBase,
   zetaCoreYt,
+  zetaCoreDl,
   zetaCoreTiktok,
   zetaCoreX,
   zetaCoreTtSearch
