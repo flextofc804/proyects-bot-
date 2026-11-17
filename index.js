@@ -211,6 +211,8 @@ function isNsfwText(text) {
 
 const ttSearchCooldown = new Map()
 
+const pinSearchCooldown = new Map()
+
 const searchHistory = new Map()
 
 const config = {
@@ -2351,24 +2353,91 @@ case "video":
           break
 
         case "pinterest":
-        case "pin":
-          if (!text) {
-            await reply("Uso: #pinterest <término>")
-            return
+        case "pin": {
+          const pinQuery = text.trim().slice(0, 100)
+          if (!pinQuery) {
+            await reply("📌 Escribí qué querés buscar:\n#pin gatos graciosos")
+            break
           }
+          if (isNsfwText(pinQuery)) {
+            await reply("⚠️ No puedo buscar contenido +18, explícito o violento. Probá con otra búsqueda.")
+            break
+          }
+          const pinTs = Date.now()
+          if (pinTs - (pinSearchCooldown.get(from) || 0) < 8000) {
+            await reply("⏳ Esperá unos segundos entre búsquedas.")
+            break
+          }
+          pinSearchCooldown.set(from, pinTs)
+          const { zetaCorePin } = await import("./youtube.js")
+          await reply(`📌 Buscando en Pinterest: "${pinQuery}"...`)
           try {
-            const pinRes = await axios.get(`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(text)}`, { headers: { "User-Agent": "Mozilla/5.0" } })
-            const imgMatch = pinRes.data.match(/"url":"(https:\/\/i\.pinimg\.com\/[^"]+)"/)
-            if (imgMatch) {
-              const pinImg = await axios.get(imgMatch[1], { responseType: "arraybuffer" })
-              await sock.sendMessage(from, { image: Buffer.from(pinImg.data) }, { quoted: msg })
-            } else {
-              await reply("No se encontraron imágenes")
+            let imagenes = []
+            try {
+              const resultados = await zetaCorePin(pinQuery, 5)
+              imagenes = resultados.filter((r) => !isNsfwText(r.titulo)).map((r) => r.imagen)
+            } catch (zetaError) {
+              console.log("pin: ZETA-CORE falló →", zetaError?.message || zetaError)
             }
+            if (!imagenes.length) {
+              const pinRes = await fetch(`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(pinQuery)}`, {
+                headers: { "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36" },
+                signal: AbortSignal.timeout(20000)
+              })
+              if (!pinRes.ok) throw new Error(`Pinterest respondió HTTP ${pinRes.status}`)
+              const html = await pinRes.text()
+              const pinRegex = /https:\/\/i\.pinimg\.com\/(?:originals|736x)\/[0-9a-f/]+\.(?:jpg|png|jpeg|webp)/g
+              imagenes = [...new Set((html.match(pinRegex) || []).map((u) => u.replace(/\/(?:originals|736x)\//, "/736x/")))].slice(0, 5)
+            }
+            imagenes = [...new Set(imagenes)].slice(0, 5)
+            if (!imagenes.length) {
+              await reply(`😐 No encontré imágenes de Pinterest para "${pinQuery}". Probá con otras palabras.`)
+              break
+            }
+            const pinBajados = []
+            for (let i = 0; i < imagenes.length; i++) {
+              const candidatas = [...new Set([imagenes[i], imagenes[i].replace("/736x/", "/originals/")])]
+              for (const candidata of candidatas) {
+                try {
+                  const pinResp = await fetch(candidata, {
+                    headers: { "User-Agent": "Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36" },
+                    signal: AbortSignal.timeout(20000)
+                  })
+                  const tipo = pinResp.headers.get("content-type") || ""
+                  if (!pinResp.ok || !tipo.startsWith("image/")) throw new Error(`HTTP ${pinResp.status} ${tipo}`)
+                  const buf = Buffer.from(await pinResp.arrayBuffer())
+                  if (buf.length < 5120) throw new Error("imagen vacía")
+                  const pinFile = tempFile("jpg")
+                  fs.writeFileSync(pinFile, buf)
+                  pinBajados.push({ kind: "image", file: pinFile, caption: "" })
+                  break
+                } catch (imgError) {
+                  console.log(`pin: imagen ${i + 1} falló (${candidata.slice(28, 60)}) →`, imgError?.message || imgError)
+                }
+              }
+            }
+            if (!pinBajados.length) {
+              await reply("⚠️ No pude descargar las imágenes. Probá de nuevo en un rato.")
+              break
+            }
+            try {
+              await sendAlbumVideos(sock, from, pinBajados)
+            } catch (albumError) {
+              console.log("pin: álbum no soportado, mandando de a uno →", albumError?.message || albumError)
+              for (const item of pinBajados) {
+                try {
+                  await sock.sendMessage(from, { image: { url: item.file } }, { quoted: msg })
+                } catch (sendError) {
+                  console.log("pin: error al enviar imagen →", sendError?.message || sendError)
+                }
+              }
+            }
+            for (const item of pinBajados) removeFile(item.file)
           } catch (e) {
-            await reply("Error al buscar en Pinterest")
+            await reply(`⚠️ La búsqueda falló.\nMotivo técnico: ${String(e?.message || e).slice(0, 150)}`)
           }
           break
+        }
 
         case "mediafire":
         case "mf":
