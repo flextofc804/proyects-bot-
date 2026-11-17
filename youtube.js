@@ -938,11 +938,11 @@ async function customApiDownload(videoId, kind, prefix) {
   return customApiDownloadUrl(`https://www.youtube.com/watch?v=${videoId}`, kind, prefix)
 }
 
-async function zetaCoreDlRetry(query, kind, prefix) {
+async function zetaCoreDlRetry(query, kind, prefix, quality) {
   let lastError = null
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      return await zetaCoreDl(query, kind, prefix)
+      return await zetaCoreDl(query, kind, prefix, quality)
     } catch (e) {
       lastError = e
       const msg = String(e?.message || e)
@@ -1017,7 +1017,7 @@ async function zetaCoreSaveFile(directUrl, prefix, kind) {
   throw new Error("archivo vacío de ZETA-CORE")
 }
 
-async function zetaCoreDl(query, kind, prefix) {
+async function zetaCoreDl(query, kind, prefix, quality) {
   const config = zetaCoreConfig()
   if (!config.dlKey) throw new Error("falta la clave /dl en la línea 3 de zeta-core.txt")
   const params = new URLSearchParams({
@@ -1025,6 +1025,7 @@ async function zetaCoreDl(query, kind, prefix) {
     kind: ["audio", "video", "tiktok", "x", "instagram", "facebook"].includes(kind) ? kind : "video",
     key: config.dlKey
   })
+  if (quality && (kind === "audio" || kind === "video")) params.set("quality", String(quality))
   const url = `${config.base}/dl?${params.toString()}`
   const output = path.join(root, `${prefix}.part`)
   const file = await downloadApiFile(
@@ -1045,8 +1046,11 @@ async function zetaCoreYt(query, kind, prefix) {
   const params = new URLSearchParams({ query })
   if (kind !== "audio") params.set("quality", "720p")
   const data = await zetaCoreJson(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
+  const duracion = Number(data?.duracion_segundos) || 0
+  const dlQuality =
+    kind === "video" ? (duracion > 1200 ? "360p" : duracion > 600 ? "480p" : "720p") : null
   try {
-    return await zetaCoreDlRetry(data.videoId || query, kind, prefix)
+    return await zetaCoreDlRetry(data.videoId || query, kind, prefix, dlQuality)
   } catch (dlError) {
     const dlMsg = String(dlError?.message || dlError)
     log(`ZETA-CORE /dl falló (${dlMsg.slice(0, 80)}); probando enlace directo...`)
