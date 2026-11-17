@@ -938,6 +938,21 @@ async function customApiDownload(videoId, kind, prefix) {
   return customApiDownloadUrl(`https://www.youtube.com/watch?v=${videoId}`, kind, prefix)
 }
 
+async function zetaCoreDlRetry(query, kind, prefix) {
+  let lastError = null
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      return await zetaCoreDl(query, kind, prefix)
+    } catch (e) {
+      lastError = e
+      const msg = String(e?.message || e)
+      if (msg.includes("falta la clave")) throw e
+      if (attempt < 3) await sleepMs(3000)
+    }
+  }
+  throw lastError
+}
+
 const ZETA_CORE_DEFAULT = "https://zeta-core-api.vercel.app"
 
 function zetaCoreConfig() {
@@ -1031,7 +1046,7 @@ async function zetaCoreYt(query, kind, prefix) {
   if (kind !== "audio") params.set("quality", "720p")
   const data = await zetaCoreJson(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
   try {
-    return await zetaCoreDl(data.videoId || query, kind, prefix)
+    return await zetaCoreDlRetry(data.videoId || query, kind, prefix)
   } catch (dlError) {
     const dlMsg = String(dlError?.message || dlError)
     log(`ZETA-CORE /dl falló (${dlMsg.slice(0, 80)}); probando enlace directo...`)
@@ -1071,7 +1086,7 @@ function zetaCorePickMedia(data) {
 
 async function zetaCoreInstagram(url, prefix) {
   try {
-    return await zetaCoreDl(url, "instagram", prefix)
+    return await zetaCoreDlRetry(url, "instagram", prefix)
   } catch (dlError) {
     const dlMsg = String(dlError?.message || dlError)
     const data = await zetaCoreJson("/instagram", new URLSearchParams({ query: url }))
@@ -1088,7 +1103,7 @@ async function zetaCoreInstagram(url, prefix) {
 
 async function zetaCoreFacebook(url, prefix) {
   try {
-    return await zetaCoreDl(url, "facebook", prefix)
+    return await zetaCoreDlRetry(url, "facebook", prefix)
   } catch (dlError) {
     const dlMsg = String(dlError?.message || dlError)
     const data = await zetaCoreJson("/facebook", new URLSearchParams({ query: url }))
