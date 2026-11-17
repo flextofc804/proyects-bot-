@@ -1022,7 +1022,7 @@ async function zetaCoreDl(query, kind, prefix) {
   if (!config.dlKey) throw new Error("falta la clave /dl en la línea 3 de zeta-core.txt")
   const params = new URLSearchParams({
     query: String(query),
-    kind: kind === "audio" ? "audio" : "video",
+    kind: ["audio", "video", "tiktok", "x", "instagram", "facebook"].includes(kind) ? kind : "video",
     key: config.dlKey
   })
   const url = `${config.base}/dl?${params.toString()}`
