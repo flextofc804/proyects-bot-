@@ -503,6 +503,29 @@ function renderMenuListRows() {
   return rows
 }
 
+async function sendAlbumVideos(sock, jid, items) {
+  const { generateWAMessageFromContent, generateWAMessage } = await import("@whiskeysockets/baileys")
+  const videoCount = items.filter((i) => i.kind === "video").length
+  const imageCount = items.length - videoCount
+  const album = generateWAMessageFromContent(
+    jid,
+    { albumMessage: { expectedImageCount: imageCount, expectedVideoCount: videoCount } },
+    { userJid: jid, upload: sock.waUploadToServer }
+  )
+  await sock.relayMessage(jid, album.message, { messageId: album.key.id })
+  for (const item of items) {
+    const content =
+      item.kind === "video"
+        ? { video: { url: item.file }, caption: item.caption }
+        : { image: { url: item.file }, caption: item.caption }
+    const mediaMsg = await generateWAMessage(jid, content, { upload: sock.waUploadToServer })
+    mediaMsg.message.messageContextInfo = {
+      messageAssociation: { associationType: 15, parentMessageKey: album.key }
+    }
+    await sock.relayMessage(jid, mediaMsg.message, { messageId: mediaMsg.key.id })
+  }
+}
+
 async function sendMenuInteractive(sock, from, msg, menuText, opts = {}) {
   const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = await import("@whiskeysockets/baileys")
   const withImage = opts.withImage !== false
@@ -974,8 +997,8 @@ async function startBot() {
               break
             }
             const { tiktokDownload } = await import("./downloader.js")
-            await reply(`⬇️ Encontré ${results.length} videos. Los descargo y te los mando en MP4 (puede tardar unos minutos)...`)
-            let enviados = 0
+            await reply(`⬇️ Encontré ${results.length} videos. Los descargo y te los mando juntos (puede tardar un poco)...`)
+            const bajados = []
             for (let i = 0; i < results.length; i++) {
               const r = results[i]
               let file = null
@@ -1001,23 +1024,32 @@ async function startBot() {
                 }
               }
               if (file) {
-                try {
-                  const buffer = fs.readFileSync(file)
-                  const caption = `🎬 *${i + 1}/${results.length}* · "${query}"\n${String(r.title || "").slice(0, 150)}${r.author ? `\n👤 ${r.author}` : ""}`
-                  await sock.sendMessage(from, { video: buffer, mimetype: "video/mp4", caption }, { quoted: msg })
-                  enviados++
-                } catch (sendError) {
-                  console.log("ttsearch: error al enviar video", i + 1, "→", sendError?.message || sendError)
-                  await reply(`⚠️ No pude mandar el video ${i + 1}. Enlace: ${r.url}`)
-                }
-                removeFile(file)
+                bajados.push({
+                  kind: "video",
+                  file,
+                  caption: `🎬 *${bajados.length + 1}/${results.length}* · "${query}"\n${String(r.title || "").slice(0, 150)}${r.author ? `\n👤 ${r.author}` : ""}`
+                })
               } else {
-                await reply(`⚠️ No pude descargar el video ${i + 1}. Enlace: ${r.url}`)
+                console.log(`ttsearch: video ${i + 1} sin fuente descargable → ${r.url}`)
               }
             }
-            if (!enviados) {
+            if (!bajados.length) {
               await reply(`⚠️ No pude descargar ninguno de los ${results.length} videos. Probá de nuevo en un rato o descargalos con #tiktok <enlace>.`)
+              break
             }
+            try {
+              await sendAlbumVideos(sock, from, bajados)
+            } catch (albumError) {
+              console.log("ttsearch: álbum no soportado, mandando de a uno →", albumError?.message || albumError)
+              for (const item of bajados) {
+                try {
+                  await sock.sendMessage(from, { video: { url: item.file }, mimetype: "video/mp4", caption: item.caption }, { quoted: msg })
+                } catch (sendError) {
+                  console.log("ttsearch: error al enviar video →", sendError?.message || sendError)
+                }
+              }
+            }
+            for (const item of bajados) removeFile(item.file)
           } catch (e) {
             await reply(`⚠️ La búsqueda falló.\nMotivo técnico: ${String(e?.message || e).slice(0, 180)}`)
           }
