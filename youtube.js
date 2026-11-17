@@ -1064,7 +1064,12 @@ async function zetaCoreTiktok(url, prefix) {
   const links = data?.data?.links || {}
   const direct = links.hd || links.sd || links.wm || data?.data?.url || null
   if (!direct) throw new Error("el video no tiene fuente descargable")
-  return zetaCoreSaveFile(direct, prefix, "video")
+  try {
+    return await zetaCoreSaveFile(direct, prefix, "video")
+  } catch (cdnError) {
+    if (String(cdnError?.message || cdnError).includes("falta la clave")) throw cdnError
+    return zetaCoreDlRetry(url, "tiktok", prefix)
+  }
 }
 
 async function zetaCoreX(url, prefix) {
