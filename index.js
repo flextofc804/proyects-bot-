@@ -1966,11 +1966,19 @@ case "play":
             const audioBuffer = fs.readFileSync(audioFile)
             const audioExt = String(path.extname(audioFile) || "").toLowerCase()
             const isVoice = command === "ytaudio" || command === "playaudio"
-            await sock.sendMessage(
-              from,
-              { audio: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", ptt: isVoice },
-              { quoted: msg }
-            )
+            if (audioBuffer.length > 20 * 1024 * 1024) {
+              await sock.sendMessage(
+                from,
+                { document: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", fileName: `zenith_audio${audioExt || ".m4a"}`, caption: "ZENITH - Audio largo enviado como documento" },
+                { quoted: msg }
+              )
+            } else {
+              await sock.sendMessage(
+                from,
+                { audio: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", ptt: isVoice },
+                { quoted: msg }
+              )
+            }
             removeFile(audioFile)
           } catch (e) {
             const reason = String(e?.message || e)
@@ -2151,9 +2159,14 @@ case "video":
           }
           try {
             await reply("Descargando de Facebook...")
-            const { customApiInfo, customApiDownloadUrl } = await import("./youtube.js")
+            const { customApiInfo, customApiDownloadUrl, zetaCoreFacebook } = await import("./youtube.js")
             let fbApiFile = null
-            if (customApiInfo()) {
+            try {
+              fbApiFile = await zetaCoreFacebook(text, `zenith_facebook_${Date.now()}`)
+            } catch (fbZetaError) {
+              console.log("ZETA-CORE facebook falló:", fbZetaError?.message || fbZetaError)
+            }
+            if (!fbApiFile && customApiInfo()) {
               try {
                 fbApiFile = await customApiDownloadUrl(text, "video", `zenith_facebook_${Date.now()}`)
               } catch (fbApiError) {
@@ -2190,9 +2203,14 @@ case "video":
           try {
             await reply("Descargando de Instagram...")
             const { instagramDownload } = await import("./downloader.js")
-            const { customApiInfo, customApiDownloadUrl } = await import("./youtube.js")
+            const { customApiInfo, customApiDownloadUrl, zetaCoreInstagram } = await import("./youtube.js")
             let igApiFile = null
-            if (customApiInfo()) {
+            try {
+              igApiFile = await zetaCoreInstagram(text, `zenith_instagram_${Date.now()}`)
+            } catch (igZetaError) {
+              console.log("ZETA-CORE instagram falló:", igZetaError?.message || igZetaError)
+            }
+            if (!igApiFile && customApiInfo()) {
               try {
                 igApiFile = await customApiDownloadUrl(text, "video", `zenith_instagram_${Date.now()}`)
               } catch (igApiError) {
