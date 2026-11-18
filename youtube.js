@@ -1079,6 +1079,19 @@ async function zetaCoreYt(query, kind, prefix) {
   }
 }
 
+async function zetaCoreMeta(query, kind) {
+  const params = new URLSearchParams({ query: String(query) })
+  if (kind !== "audio") params.set("quality", "720p")
+  const data = await zetaCoreJson(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
+  return {
+    titulo: data?.titulo || data?.title || "",
+    canal: data?.canal || data?.autor || data?.channel || "",
+    visitas: data?.visitas ?? data?.views ?? null,
+    duracion: Number(data?.duracion_segundos) || 0,
+    videoId: data?.videoId || query
+  }
+}
+
 async function zetaCoreTiktok(url, prefix) {
   const data = await zetaCoreJson("/tiktok", new URLSearchParams({ query: url }))
   const links = data?.data?.links || {}
@@ -1533,6 +1546,7 @@ export {
   customApiDownloadUrl,
   zetaCoreBase,
   zetaCoreYt,
+  zetaCoreMeta,
   zetaCoreDl,
   zetaCoreTiktok,
   zetaCoreX,

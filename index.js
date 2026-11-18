@@ -153,6 +153,150 @@ async function stickerToImage(buffer) {
   }
 }
 
+const REACCIONES = {
+  play: ["🎶", "🎵", "🎧", "✨", "💫", "❥"],
+  yt: ["🎶", "🎵", "🎧", "✨", "💫", "❥"],
+  ytaudio: ["🎧", "🎶", "✨", "💫"],
+  playaudio: ["🎧", "🎶", "✨", "💫"],
+  mp3: ["🎶", "🎵", "🎧", "✨"],
+  song: ["🎶", "🎵", "🎧", "✨"],
+  mp4: ["🎬", "📽️", "🎞️", "✨", "💫", "♱"],
+  playvideo: ["🎬", "📽️", "✨", "💫"],
+  ytmp4: ["🎬", "📽️", "✨", "💫"],
+  play2: ["🎬", "📽️", "✨", "💫"],
+  video: ["🎬", "📽️", "✨", "💫"],
+  tiktok: ["🌀", "🎼", "🎬", "❥", "✨", "۶ৎ"],
+  tt: ["🌀", "🎼", "🎬", "❥", "✨"],
+  instagram: ["📷", "📸", "✨", "🤍", "⋆࣪"],
+  ig: ["📷", "📸", "✨", "🤍"],
+  reel: ["📷", "📸", "✨", "🤍"],
+  facebook: ["📱", "🎬", "✨", "💙"],
+  fb: ["📱", "🎬", "✨", "💙"],
+  twitter: ["✖️", "🐦", "✨", "💫"],
+  x: ["✖️", "🐦", "✨", "💫"],
+  ttsearch: ["🔎", "🍃", "✨", "❥", "𖥔"],
+  tiktoksearch: ["🔎", "🍃", "✨", "❥", "𖥔"],
+  pin: ["📌", "🌷", "✨", "♡", "ᥫ᭡"],
+  pinterest: ["📌", "🌷", "✨", "♡", "ᥫ᭡"],
+  ytsearch: ["🔎", "🎵", "✨", "💫"],
+  menu: ["📜", "✨", "💫", "🔖", "۶ৎ"],
+  menu2: ["📒", "✨", "💫", "🔖"],
+  comandos: ["📜", "✨", "💫", "🔖", "۶ৎ"],
+  commands: ["📜", "✨", "💫", "🔖", "۶ৎ"],
+  help: ["📜", "✨", "💫", "🔖", "۶ৎ"]
+}
+
+async function reaccionar(sock, from, msg, pool) {
+  try {
+    const emoji = pool[Math.floor(Math.random() * pool.length)]
+    await sock.sendMessage(from, { react: { text: emoji, key: msg.key } })
+  } catch {}
+}
+
+const SIMBOLOS = ["⋆", "୨୧", "۶ৎ", "ᥫ᭡", "♱", "𑣲", "✧", "❥", "♡", "༄", "༅", "❦", "⋆࣪", "𖥔", "⌗", "๑", "⁺", "˖"]
+
+function elegirSimbolos(n) {
+  const pool = [...SIMBOLOS]
+  const out = []
+  for (let i = 0; i < n && pool.length; i++) {
+    out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0])
+  }
+  return out
+}
+
+const ESTILOS_LETRA = [
+  { a: 0x1d5d4, d: 0x1d7ec },
+  { a: 0x1d471, d: 0x1d7ce },
+  { a: 0x1d4d0, d: 0 },
+  { a: 0x1d538, d: 0x1d7d8 }
+]
+
+function estilizarLetra(texto) {
+  const s = ESTILOS_LETRA[Math.floor(Math.random() * ESTILOS_LETRA.length)]
+  return [...String(texto)]
+    .map((ch) => {
+      const c = ch.codePointAt(0)
+      if (c >= 0x41 && c <= 0x5a) return String.fromCodePoint(s.a + (c - 0x41))
+      if (c >= 0x61 && c <= 0x7a) return String.fromCodePoint(s.a + 26 + (c - 0x61))
+      if (s.d && c >= 0x30 && c <= 0x39) return String.fromCodePoint(s.d + (c - 0x30))
+      return ch
+    })
+    .join("")
+}
+
+function fmtDuracion(seg) {
+  const s = Number(seg) || 0
+  if (!s) return ""
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const r = s % 60
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`
+}
+
+function fmtVisitas(v) {
+  const n = Number(v) || 0
+  if (!n) return ""
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`
+  return String(n)
+}
+
+function decorarPortada(meta, tipo) {
+  const [s1, s2, s3, s4, s5] = elegirSimbolos(5)
+  const titulo = estilizarLetra(meta.titulo || "desconocido")
+  const dur = fmtDuracion(meta.duracion)
+  const vis = fmtVisitas(meta.visitas)
+  let cap = `⋆ ୨୧ ⋆ EʀᴢᴀBᴏᴛ-MD/OFC ⋆ ୨୧ ⋆\n\n`
+  cap += `${s1} ${titulo}\n`
+  cap += `${s2} ᴄᴀɴᴀʟ: ${meta.canal || "desconocido"}\n`
+  if (dur) cap += `${s3} ᴅᴜʀᴀᴄɪᴏ́ɴ: ${dur}\n`
+  if (vis) cap += `${s4} ᴠɪꜱᴛᴀꜱ: ${vis}\n`
+  cap += `\n${s5} ${tipo === "audio" ? "🎧 ᴀᴜᴅɪᴏ ᴇɴ ᴄᴀᴍɪɴᴏ..." : "🎬 ᴠɪᴅᴇᴏ ᴇɴ ᴄᴀᴍɪɴᴏ..."}`
+  return cap
+}
+
+async function enviarPortada(sock, from, msg, meta, tipo) {
+  try {
+    const vid = String(meta.videoId || "")
+    if (!/^[-_a-zA-Z0-9]{6,20}$/.test(vid)) return
+    const candidatos = [`https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${vid}/hq720.jpg`, `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`, `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`]
+    let thumbBuf = null
+    for (const url of candidatos) {
+      try {
+        const r = await axios.get(url, { responseType: "arraybuffer", timeout: 10000, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } })
+        const b = Buffer.from(r.data)
+        if (r.status === 200 && b.length > 5000) { thumbBuf = b; break }
+      } catch {}
+    }
+    if (!thumbBuf) return
+    const inFile = tempFile("jpg")
+    const outFile = tempFile("jpg")
+    fs.writeFileSync(inFile, thumbBuf)
+    try {
+      const ffmpeg = await loadFfmpeg()
+      const filter = "crop='min(iw,ih*16/9)':'min(iw*9/16,ih)',scale=720:720:force_original_aspect_ratio=increase,crop=720:720"
+      if (ffmpeg) {
+        await new Promise((resolve, reject) => {
+          ffmpeg(inFile)
+            .outputOptions("-vf", filter, "-q:v", "2", "-frames:v", "1", "-an")
+            .save(outFile)
+            .on("end", resolve)
+            .on("error", reject)
+        })
+      } else {
+        await execAsync(`ffmpeg -y -i "${inFile}" -vf "${filter}" -q:v 2 -frames:v 1 -an "${outFile}"`)
+      }
+      await sock.sendMessage(from, { image: { url: outFile }, caption: decorarPortada(meta, tipo) }, { quoted: msg })
+    } finally {
+      removeFile(inFile)
+      removeFile(outFile)
+    }
+  } catch (e) {
+    console.log("[PORTADA] fallo silencioso:", e?.message || e)
+  }
+}
+
 const MENU_IMAGE = [
   "menu.jpg",
   "menu.png",
@@ -822,6 +966,8 @@ async function startBot() {
     const args = body.slice(config.prefix.length).trim().split(/ +/)
     const command = args.shift().toLowerCase()
     const text = args.join(" ")
+
+    if (REACCIONES[command]) reaccionar(sock, from, msg, REACCIONES[command]).catch(() => {})
 
     const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage
     const mentioned = msg.message.extendedTextMessage?.contextInfo?.mentionedJid || []
@@ -2009,12 +2155,16 @@ case "play":
               const picked = searchHistory.get(from)[Number(text.trim()) - 1]
               if (picked) audioQuery = `https://www.youtube.com/watch?v=${picked.id}`
             }
-            const { resolveVideo, mediaFile } = await import("./youtube.js")
+            const { resolveVideo, mediaFile, zetaCoreMeta } = await import("./youtube.js")
             const audioVideoId = await resolveVideo(audioQuery)
             if (!audioVideoId) {
               await reply("No se encontró el video")
               return
             }
+            try {
+              const audioMeta = await zetaCoreMeta(audioVideoId, "audio")
+              if (audioMeta?.videoId) await enviarPortada(sock, from, msg, audioMeta, "audio")
+            } catch {}
             const audioFile = await mediaFile(audioVideoId, "audio")
             const audioBuffer = fs.readFileSync(audioFile)
             const audioExt = String(path.extname(audioFile) || "").toLowerCase()
@@ -2062,12 +2212,16 @@ case "video":
       const picked = searchHistory.get(from)[Number(text.trim()) - 1]
       if (picked) videoQuery = `https://www.youtube.com/watch?v=${picked.id}`
     }
-    const { resolveVideo, mediaFile } = await import("./youtube.js")
+    const { resolveVideo, mediaFile, zetaCoreMeta } = await import("./youtube.js")
     const videoVideoId = await resolveVideo(videoQuery)
     if (!videoVideoId) {
       await reply("No se encontró el video")
       return
     }
+    try {
+      const videoMeta = await zetaCoreMeta(videoVideoId, "video")
+      if (videoMeta?.videoId) await enviarPortada(sock, from, msg, videoMeta, "video")
+    } catch {}
     const videoFile = await mediaFile(videoVideoId, "video")
     const videoExt = String(path.extname(videoFile) || "").toLowerCase()
     const videoSize = fs.statSync(videoFile).size
