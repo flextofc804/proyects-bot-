@@ -877,6 +877,7 @@ const SUBBOTS = new Map()
 const MAX_SUBBOTS = 20
 const CARPETA_SUBBOTS = "subbots"
 let sockPrincipal = null
+const PEDIDO_CODIGO = new Map() // num -> vencimiento del pedido de codigo (evita codigos dobles)
 
 function numeroLimpioSub(x) {
   return String(x || "").replace(/[^0-9]/g, "")
@@ -972,8 +973,9 @@ async function startBot(opts = {}) {
     const { connection, lastDisconnect } = update
 
     // Sub-bot sin sesion registrada: pedir codigo de vinculacion (pairing code, sin QR)
-    if (esSub && numeroSub && !state.creds?.registered && update.qr && !opts.codigoPedido) {
-      opts.codigoPedido = true
+    const expiroPedidoSub = (PEDIDO_CODIGO.get(numeroSub) || 0) < Date.now()
+    if (esSub && numeroSub && !state.creds?.registered && update.qr && expiroPedidoSub) {
+      PEDIDO_CODIGO.set(numeroSub, Date.now() + 120000)
       setTimeout(async () => {
         try {
           const codigo = await sock.requestPairingCode(numeroSub)
@@ -985,6 +987,7 @@ async function startBot(opts = {}) {
           }
           console.log(`[SUBBOT] codigo de vinculacion pedido para +${numeroSub}`)
         } catch (e) {
+          PEDIDO_CODIGO.delete(numeroSub) // permitir reintentar el codigo
           console.log("[SUBBOT] error pidiendo codigo:", e?.message || e)
         }
       }, 3000)
@@ -993,16 +996,20 @@ async function startBot(opts = {}) {
     if (connection === "close") {
       const statusCode = lastDisconnect?.error?.output?.statusCode
       if (esSub) {
-        // Sesion desloggeada o nunca registrada: borrar carpeta y soltar (sin bucles)
-        if (statusCode === DisconnectReason.loggedOut || !sesionSubRegistrada(sessionDir)) {
+        // Desvinculado desde el celular: borrar carpeta y soltar
+        // Nunca registrada despues de muchos intentos: limpiar (sin bucles infinitos)
+        const motivoMortal = statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.forbidden
+        const registrada = sesionSubRegistrada(sessionDir)
+        const previa = SUBBOTS.get(numeroSub) || {}
+        const intentos = (Number(previa.intentos) || 0) + 1
+        if (motivoMortal || (!registrada && intentos >= 12)) {
           try { fs.rmSync(sessionDir, { recursive: true, force: true }) } catch {}
           SUBBOTS.delete(numeroSub)
-          console.log(`[SUBBOT] sesion eliminada para +${numeroSub} (sin registrar o desvinculada)`)
+          PEDIDO_CODIGO.delete(numeroSub)
+          console.log(`[SUBBOT] sesion eliminada para +${numeroSub} (${motivoMortal ? "desvinculada en el celular" : "nunca se completo la vinculacion"})`)
           return
         }
         // Otro motivo: reconectar con backoff (5s, 10s, ... max 60s)
-        const previa = SUBBOTS.get(numeroSub) || {}
-        const intentos = (Number(previa.intentos) || 0) + 1
         SUBBOTS.set(numeroSub, { ...previa, numero: numeroSub, token: tokenSub, conectado: false, sock: null, intentos })
         const espera = Math.min(intentos * 5000, 60000)
         console.log(`[SUBBOT] +${numeroSub} desconectado, reintentando en ${espera / 1000}s (intento ${intentos})`)
@@ -1022,6 +1029,7 @@ async function startBot(opts = {}) {
       if (esSub) {
         const previa = SUBBOTS.get(numeroSub) || {}
         SUBBOTS.set(numeroSub, { ...previa, numero: numeroSub, token: tokenSub, sock, conectado: true, desde: Date.now(), intentos: 0 })
+        PEDIDO_CODIGO.delete(numeroSub)
         console.log(`[SUBBOT] +${numeroSub} conectado como sub-bot ✅`)
         if (!previa.conectado) {
           const destinoSock = opts.respuestaSock || sockPrincipal || sock
@@ -3015,7 +3023,19 @@ case "video":
             await reply(`${panel(`SUB-BOT`, `> El código se pide por mensaje privado\n> Escribime directo al chat privado del bot: #code`)}`)
             return
           }
-          const numeroDestino = numeroLimpioSub(args[0] || "") || senderNumber
+          // Resolver @mención: usar el JID real (@s.whatsapp.net), NO el LID interno (ese no es un número de teléfono)
+          const mencionados = ((msg.message?.extendedTextMessage?.contextInfo?.mentionedJid)
+            || (msg.message?.imageMessage?.contextInfo?.mentionedJid)
+            || (msg.message?.videoMessage?.contextInfo?.mentionedJid)
+            || []).map((j) => String(j))
+          const mencionPN = mencionados.find((j) => j.endsWith("@s.whatsapp.net"))
+          if (mencionados.length && !mencionPN) {
+            await reply(`${panel(`SUB-BOT`, `> No pude sacar el número real de esa mención 😕\n> Escribilo a mano con código de país\n> Ejemplo: #code 5491127289595`)}`)
+            return
+          }
+          let numeroDestino = mencionPN ? numeroLimpioSub(mencionPN.split("@")[0]) : ""
+          if (!numeroDestino) numeroDestino = numeroLimpioSub(args[0] || "")
+          if (!numeroDestino) numeroDestino = senderNumber
           const numPrincipal = ((sock.user?.id || "").split(":")[0] || "").replace(/[^0-9]/g, "")
           if (numeroDestino === numPrincipal) {
             await reply(`${panel(`SUB-BOT`, `> Ese número ya es el bot principal ✅`)}`)
