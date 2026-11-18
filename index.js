@@ -190,7 +190,7 @@ if (MENU_IMAGE2) {
 }
 const NSFW_PATTERN = /\b(porn\w*|xxx|nsfw|hentai|onlyfans|redtube|xvideos|sexo|sexual|desnud[ao]s?|nudes?|naked|tetas|culo|culos|vagina|pene|anal|orgia|orgias|erotico|eroticas?|horny|gore|decapitacion|mutilacion|suicidio|violacion|violar|incesto|puta|putas|puto|putos|masturb\w*|18\+)\b/
 
-const PANEL_TOP = "╭" + "─".repeat(26) + "╮\n  ⚡ EʀᴢᴀBᴏᴛ-MD/OFC ⚡\n╰" + "─".repeat(26) + "╯"
+const PANEL_TOP = "╭" + "─".repeat(26) + "╮\n  ⋆ ୲୳ ⋆ EʀᴢᴀBᴏᴛ-MD/OFC ⋆ ୲୳ ⋆\n╰" + "─".repeat(26) + "╯"
 const PANEL_FOOTER = "└" + "─".repeat(15) + "┘"
 
 function panelStart(title, body) {
@@ -216,7 +216,7 @@ const pinSearchCooldown = new Map()
 const searchHistory = new Map()
 
 const config = {
-  botName: "EʀᴢᴀBᴏᴛ-MD/OFC",
+  botName: "⋆ ୲୳ ⋆ EʀᴢᴀBᴏᴛ-MD/OFC ⋆ ୲୳ ⋆",
   prefix: "#",
   owner: "Dueño",
   ownerNumber: "5491127289595@s.whatsapp.net",
@@ -567,7 +567,7 @@ async function sendMenuInteractive(sock, from, msg, menuText, opts = {}) {
               hasMediaAttachment: Boolean(media?.imageMessage)
             }),
             body: proto.Message.InteractiveMessage.Body.create({ text: menuText }),
-            footer: proto.Message.InteractiveMessage.Footer.create({ text: "EʀᴢᴀBᴏᴛ-MD/OFC" }),
+            footer: proto.Message.InteractiveMessage.Footer.create({ text: "⋆ ୲୳ ⋆ EʀᴢᴀBᴏᴛ-MD/OFC ⋆ ୲୳ ⋆" }),
             nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({ buttons })
           })
         }
@@ -745,7 +745,7 @@ async function startBot() {
     },
     printQRInTerminal: true,
     logger: pino({ level: "silent" }),
-    browser: ["EʀᴢᴀBᴏᴛ-MD/OFC", "Chrome", "1.0.0"]
+    browser: ["୲୳ EʀᴢᴀBᴏᴛ-MD/OFC", "Chrome", "1.0.0"]
   })
 
   sock.ev.on("creds.update", saveCreds)
@@ -2005,7 +2005,7 @@ case "play":
             if (audioBuffer.length > 20 * 1024 * 1024) {
               await sock.sendMessage(
                 from,
-                { document: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", fileName: `zenith_audio${audioExt || ".m4a"}`, caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Audio largo enviado como documento" },
+                { document: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", fileName: `zenith_audio${audioExt || ".m4a"}`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Audio largo enviado como documento" },
                 { quoted: msg }
               )
             } else {
@@ -2057,7 +2057,7 @@ case "video":
     const sendVideoDocumento = () =>
       sock.sendMessage(
         from,
-        { document: { url: videoFile }, mimetype: "video/mp4", fileName: `zenith_video${videoExt || ".mp4"}`, caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Video pesado enviado como documento" },
+        { document: { url: videoFile }, mimetype: "video/mp4", fileName: `zenith_video${videoExt || ".mp4"}`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video pesado enviado como documento" },
         { quoted: msg }
       )
     if (videoSize > 50 * 1024 * 1024) {
@@ -2066,7 +2066,7 @@ case "video":
       try {
         await sock.sendMessage(
           from,
-          { video: { url: videoFile }, mimetype: videoExt === ".webm" ? "video/webm" : "video/mp4", caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Video" },
+          { video: { url: videoFile }, mimetype: videoExt === ".webm" ? "video/webm" : "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video" },
           { quoted: msg }
         )
       } catch {
@@ -2164,7 +2164,7 @@ case "video":
               const ttBuffer = fs.readFileSync(ttApiFile)
               await sock.sendMessage(
                 from,
-                { video: ttBuffer, mimetype: "video/mp4", caption: "EʀᴢᴀBᴏᴛ-MD/OFC - TikTok" },
+                { video: ttBuffer, mimetype: "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - TikTok" },
                 { quoted: msg }
               )
               removeFile(ttApiFile)
@@ -2173,7 +2173,7 @@ case "video":
             const ttResult = await tiktokDownload(text)
             if (ttResult.type === "video") {
               const ttBuffer = fs.readFileSync(ttResult.file)
-              const ttCaption = ttResult.caption ? `EʀᴢᴀBᴏᴛ-MD/OFC - TikTok\n${ttResult.caption.slice(0, 120)}` : "EʀᴢᴀBᴏᴛ-MD/OFC - TikTok"
+              const ttCaption = ttResult.caption ? `୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - TikTok\n${ttResult.caption.slice(0, 120)}` : "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - TikTok"
               await sock.sendMessage(
                 from,
                 { video: ttBuffer, mimetype: "video/mp4", caption: ttCaption },
@@ -2182,7 +2182,7 @@ case "video":
               removeFile(ttResult.file)
             } else {
               for (const ttImage of ttResult.files.slice(0, 5)) {
-                await sock.sendMessage(from, { image: fs.readFileSync(ttImage), caption: "EʀᴢᴀBᴏᴛ-MD/OFC - TikTok" }, { quoted: msg })
+                await sock.sendMessage(from, { image: fs.readFileSync(ttImage), caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - TikTok" }, { quoted: msg })
                 removeFile(ttImage)
               }
             }
@@ -2262,7 +2262,7 @@ case "video":
               const igBuffer = fs.readFileSync(igApiFile)
               await sock.sendMessage(
                 from,
-                { video: igBuffer, mimetype: "video/mp4", caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" },
+                { video: igBuffer, mimetype: "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" },
                 { quoted: msg }
               )
               removeFile(igApiFile)
@@ -2273,13 +2273,13 @@ case "video":
               const igBuffer = fs.readFileSync(igResult.file)
               await sock.sendMessage(
                 from,
-                { video: igBuffer, mimetype: "video/mp4", caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" },
+                { video: igBuffer, mimetype: "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" },
                 { quoted: msg }
               )
               removeFile(igResult.file)
             } else {
               for (const igImage of igResult.files.slice(0, 5)) {
-                await sock.sendMessage(from, { image: fs.readFileSync(igImage), caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" }, { quoted: msg })
+                await sock.sendMessage(from, { image: fs.readFileSync(igImage), caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" }, { quoted: msg })
                 removeFile(igImage)
               }
             }
@@ -2912,7 +2912,7 @@ case "video":
 
         case "bots":
         case "sockets":
-          await reply(`${panel(`BOTS ACTIVOS`, `> 1. Zenith-Bot (Principal)\n> Estado: Activo`)}`)
+          await reply(`${panel(`BOTS ACTIVOS`, `> 1. EʀᴢᴀBᴏᴛ-MD/OFC (Principal)\n> Estado: Activo`)}`)
           break
 
         case "del":
