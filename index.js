@@ -940,9 +940,11 @@ async function startBot() {
     if (!body && msg.message.templateButtonReplyMessage) {
       body = msg.message.templateButtonReplyMessage.selectedId || ""
     }
-    if (!body || !body.startsWith(config.prefix)) return
+    const PREFIXES = ["#", "$", "%", "&", "/", ".", "!", "?", "¡"]
+    const prefixUsado = body ? PREFIXES.find((p) => body.startsWith(p)) : null
+    if (!body || !prefixUsado) return
 
-    const args = body.slice(config.prefix.length).trim().split(/ +/)
+    const args = body.slice(prefixUsado.length).trim().split(/ +/)
     const command = args.shift().toLowerCase()
     const text = args.join(" ")
 
@@ -2123,6 +2125,8 @@ case "play":
         case "ytaudio":
         case "playaudio":
         case "mp3":
+        case "ytmp3":
+        case "audio":
         case "song":
           if (!text) {
             await reply("Uso: #play <nombre o link de YouTube>")
