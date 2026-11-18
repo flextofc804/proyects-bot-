@@ -179,11 +179,11 @@ const REACCIONES = {
   pin: ["📌", "🌷", "✨", "♡", "ᥫ᭡"],
   pinterest: ["📌", "🌷", "✨", "♡", "ᥫ᭡"],
   ytsearch: ["🔎", "🎵", "✨", "💫"],
-  menu: ["📜", "✨", "💫", "🔖", "۶ৎ"],
-  menu2: ["📒", "✨", "💫", "🔖"],
-  comandos: ["📜", "✨", "💫", "🔖", "۶ৎ"],
-  commands: ["📜", "✨", "💫", "🔖", "۶ৎ"],
-  help: ["📜", "✨", "💫", "🔖", "۶ৎ"]
+  menu: ["💗", "🩷"],
+  menu2: ["💗", "🩷"],
+  comandos: ["💗", "🩷"],
+  commands: ["💗", "🩷"],
+  help: ["💗", "🩷"]
 }
 
 async function reaccionar(sock, from, msg, pool) {
@@ -1206,6 +1206,7 @@ async function startBot() {
             }
             try {
               await sendAlbumVideos(sock, from, bajados)
+            reaccionar(sock, from, msg, ["✅"]).catch(() => {})
             } catch (albumError) {
               console.log("ttsearch: álbum no soportado, mandando de a uno →", albumError?.message || albumError)
               for (const item of bajados) {
@@ -2182,6 +2183,7 @@ case "play":
                 { quoted: msg }
               )
             }
+            reaccionar(sock, from, msg, ["✅"]).catch(() => {})
             removeFile(audioFile)
           } catch (e) {
             const reason = String(e?.message || e)
@@ -2244,6 +2246,7 @@ case "video":
         await sendVideoDocumento()
       }
     }
+    reaccionar(sock, from, msg, ["✅"]).catch(() => {})
     removeFile(videoFile)
   } catch (e) {
     const reason = String(e?.message || e)
@@ -2339,6 +2342,7 @@ case "video":
                 { quoted: msg }
               )
               removeFile(ttApiFile)
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
               break
             }
             const ttResult = await tiktokDownload(text)
@@ -2357,6 +2361,7 @@ case "video":
                 removeFile(ttImage)
               }
             }
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
           } catch (e) {
             console.log("Error en tiktok:", e?.message || e)
             await reply("Error al descargar de TikTok (el enlace puede ser privado)")
@@ -2389,6 +2394,7 @@ case "video":
               const fbBuffer = fs.readFileSync(fbApiFile)
               await sock.sendMessage(from, { video: fbBuffer, mimetype: "video/mp4" }, { quoted: msg })
               removeFile(fbApiFile)
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
               break
             }
             const fbRes = await axios.get(text, { headers: { "User-Agent": "Mozilla/5.0" } })
@@ -2397,6 +2403,7 @@ case "video":
               const cleanUrl = videoMatch[1].replace(/\\u0026/g, "&").replace(/\u0026/g, "&")
               const fbVideo = await axios.get(cleanUrl, { responseType: "arraybuffer" })
               await sock.sendMessage(from, { video: Buffer.from(fbVideo.data), mimetype: "video/mp4" }, { quoted: msg })
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
             } else {
               await reply("No se pudo descargar el video de Facebook")
             }
@@ -2436,6 +2443,7 @@ case "video":
                 { video: igBuffer, mimetype: "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" },
                 { quoted: msg }
               )
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
               removeFile(igApiFile)
               break
             }
@@ -2448,12 +2456,14 @@ case "video":
                 { quoted: msg }
               )
               removeFile(igResult.file)
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
             } else {
               for (const igImage of igResult.files.slice(0, 5)) {
                 await sock.sendMessage(from, { image: fs.readFileSync(igImage), caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" }, { quoted: msg })
                 removeFile(igImage)
               }
             }
+                reaccionar(sock, from, msg, ["✅"]).catch(() => {})
           } catch (e) {
             console.log("Error en instagram:", e?.message || e)
             await reply("Error al descargar de Instagram (el post puede ser privado)")
@@ -2472,8 +2482,9 @@ case "video":
             if (/https?:\/\//i.test(text)) {
               try {
                 const twApiFile = await zetaCoreX(text, `zenith_twitter_${Date.now()}`)
-                const twBuffer = fs.readFileSync(twApiFile)
+                                const twBuffer = fs.readFileSync(twApiFile)
                 await sock.sendMessage(from, { video: twBuffer, mimetype: "video/mp4" }, { quoted: msg })
+                reaccionar(sock, from, msg, ["✅"]).catch(() => {})
                 removeFile(twApiFile)
                 break
               } catch (zetaError) {
@@ -2486,6 +2497,7 @@ case "video":
                 const twBuffer = fs.readFileSync(twApiFile)
                 await sock.sendMessage(from, { video: twBuffer, mimetype: "video/mp4" }, { quoted: msg })
                 removeFile(twApiFile)
+                reaccionar(sock, from, msg, ["✅"]).catch(() => {})
                 break
               } catch (twApiError) {
                 console.log("API propia twitter falló:", twApiError?.message || twApiError)
@@ -2507,12 +2519,14 @@ case "video":
               .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0]
             if (videoVariant) {
               const twVideo = await axios.get(videoVariant.url, { responseType: "arraybuffer", timeout: 60000 })
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
               await sock.sendMessage(from, { video: Buffer.from(twVideo.data), mimetype: "video/mp4" }, { quoted: msg })
               return
             }
             const photo = media.find((item) => item.media_url_https)
             if (photo) {
               const twImg = await axios.get(photo.media_url_https, { responseType: "arraybuffer", timeout: 60000 })
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
               await sock.sendMessage(from, { image: Buffer.from(twImg.data) }, { quoted: msg })
               return
             }
@@ -2611,6 +2625,7 @@ case "video":
             }
             try {
               await sendAlbumVideos(sock, from, pinBajados)
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
             } catch (albumError) {
               console.log("pin: álbum no soportado, mandando de a uno →", albumError?.message || albumError)
               for (const item of pinBajados) {
