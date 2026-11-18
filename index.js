@@ -154,36 +154,15 @@ async function stickerToImage(buffer) {
 }
 
 const REACCIONES = {
-  play: ["🎶", "🎵", "🎧", "✨", "💫", "❥"],
-  yt: ["🎶", "🎵", "🎧", "✨", "💫", "❥"],
-  ytaudio: ["🎧", "🎶", "✨", "💫"],
-  playaudio: ["🎧", "🎶", "✨", "💫"],
-  mp3: ["🎶", "🎵", "🎧", "✨"],
-  song: ["🎶", "🎵", "🎧", "✨"],
-  mp4: ["🎬", "📽️", "🎞️", "✨", "💫", "♱"],
-  playvideo: ["🎬", "📽️", "✨", "💫"],
-  ytmp4: ["🎬", "📽️", "✨", "💫"],
-  play2: ["🎬", "📽️", "✨", "💫"],
-  video: ["🎬", "📽️", "✨", "💫"],
-  tiktok: ["🌀", "🎼", "🎬", "❥", "✨", "۶ৎ"],
-  tt: ["🌀", "🎼", "🎬", "❥", "✨"],
-  instagram: ["📷", "📸", "✨", "🤍", "⋆࣪"],
-  ig: ["📷", "📸", "✨", "🤍"],
-  reel: ["📷", "📸", "✨", "🤍"],
-  facebook: ["📱", "🎬", "✨", "💙"],
-  fb: ["📱", "🎬", "✨", "💙"],
-  twitter: ["✖️", "🐦", "✨", "💫"],
-  x: ["✖️", "🐦", "✨", "💫"],
-  ttsearch: ["🔎", "🍃", "✨", "❥", "𖥔"],
-  tiktoksearch: ["🔎", "🍃", "✨", "❥", "𖥔"],
-  pin: ["📌", "🌷", "✨", "♡", "ᥫ᭡"],
-  pinterest: ["📌", "🌷", "✨", "♡", "ᥫ᭡"],
-  ytsearch: ["🔎", "🎵", "✨", "💫"],
-  menu: ["💗", "🩷"],
-  menu2: ["💗", "🩷"],
-  comandos: ["💗", "🩷"],
-  commands: ["💗", "🩷"],
-  help: ["💗", "🩷"]
+  play: ["📥"], yt: ["📥"], ytaudio: ["📥"], playaudio: ["📥"], mp3: ["📥"], song: ["📥"],
+  mp4: ["📥"], playvideo: ["📥"], ytmp4: ["📥"], play2: ["📥"], video: ["📥"],
+  tiktok: ["📥"], tt: ["📥"],
+  instagram: ["📥"], ig: ["📥"], reel: ["📥"],
+  facebook: ["📥"], fb: ["📥"],
+  twitter: ["📥"], x: ["📥"],
+  ttsearch: ["📥"], tiktoksearch: ["📥"],
+  pin: ["📥"], pinterest: ["📥"], ytsearch: ["📥"],
+  menu: ["💗", "🩷"], menu2: ["💗", "🩷"], comandos: ["💗", "🩷"], commands: ["💗", "🩷"], help: ["💗", "🩷"]
 }
 
 async function reaccionar(sock, from, msg, pool) {
