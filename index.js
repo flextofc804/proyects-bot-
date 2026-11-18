@@ -903,7 +903,7 @@ function textoSubBots() {
   return lineas.join("\n")
 }
 
-async function iniciarSubBot(numero, respuestaJid, respuestaSock) {
+async function iniciarSubBot(numero, respuestaJid, respuestaSock, extra = {}) {
   const num = numeroLimpioSub(numero)
   if (!/^\d{10,15}$/.test(num)) throw new Error("El numero no es valido (che familia mandalo con codigo de pais, ejemplo: 5491127289595)")
   if (SUBBOTS.get(num)?.conectado) throw new Error("Ese numero ya esta conectado como sub-bot. Mira la lista con #bots")
@@ -914,7 +914,7 @@ async function iniciarSubBot(numero, respuestaJid, respuestaSock) {
     try { yaEsta.sock.end() } catch {}
     yaEsta.sock = null
   }
-  await startBot({ esSub: true, numeroSub: num, respuestaJid, respuestaSock })
+  await startBot({ esSub: true, numeroSub: num, respuestaJid, respuestaSock, ...extra })
   return num
 }
 
@@ -974,7 +974,7 @@ async function startBot(opts = {}) {
 
     // Sub-bot sin sesion registrada: pedir codigo de vinculacion (pairing code, sin QR)
     const expiroPedidoSub = (PEDIDO_CODIGO.get(numeroSub) || 0) < Date.now()
-    if (esSub && numeroSub && !state.creds?.registered && update.qr && expiroPedidoSub) {
+    if (esSub && numeroSub && !opts.modoQr && !state.creds?.registered && update.qr && expiroPedidoSub) {
       PEDIDO_CODIGO.set(numeroSub, Date.now() + 120000)
       setTimeout(async () => {
         try {
@@ -983,7 +983,7 @@ async function startBot(opts = {}) {
           const destinoSock = opts.respuestaSock || sockPrincipal || sock
           const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
           if (destinoSock?.sendMessage) {
-            await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> Tu codigo es:\n\n> ${formateado}\n\n> Pasos en el otro celular:\n> 1. Abrir WhatsApp\n> 2. Configuracion > Dispositivos vinculados\n> 3. Vincular con el numero de telefono\n> 4. Escribir el codigo de arriba\n\n> El codigo dura poco \u23f3`) })
+            await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} tu codigo es:\n\n> ${formateado}\n\n> Pasos en el otro celular:\n> 1. Abrir WhatsApp\n> 2. Configuracion > Dispositivos vinculados\n> 3. Vincular con el numero de telefono\n> 4. Escribir el codigo de arriba\n\n> El codigo dura poco \u23f3`), mentions: [`${numeroSub}@s.whatsapp.net`] })
           }
           console.log(`[SUBBOT] codigo de vinculacion pedido para +${numeroSub}`)
         } catch (e) {
@@ -991,6 +991,36 @@ async function startBot(opts = {}) {
           console.log("[SUBBOT] error pidiendo codigo:", e?.message || e)
         }
       }, 3000)
+    }
+
+    // Sub-bot modo QR: mandar el QR como imagen para escanear directo
+    if (esSub && numeroSub && opts.modoQr && update.qr && opts.ultimoQr !== update.qr && (Number(opts.qrMandados) || 0) < 3) {
+      opts.ultimoQr = update.qr
+      opts.qrMandados = (Number(opts.qrMandados) || 0) + 1
+      ;(async () => {
+        try {
+          const destinoSock = opts.respuestaSock || sockPrincipal || sock
+          const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
+          if (!destinoSock?.sendMessage) return
+          let png = null
+          try {
+            const mod = await import("qrcode")
+            const QRLib = mod.default || mod
+            png = await QRLib.toBuffer(update.qr, { width: 640, margin: 2 })
+          } catch (errQr) {
+            console.log("[SUBBOT] falta la libreria qrcode, caigo a codigo de vinculacion:", errQr?.message || errQr)
+          }
+          if (png) {
+            await destinoSock.sendMessage(destinoJid, { image: png, caption: panel(`QR DEL SUB-BOT`, `> @${numeroSub} escane\u00e1 este QR \ud83d\udcf2\n> En el tel\u00e9fono del sub-bot:\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular un dispositivo\n> 4. Apuntar la c\u00e1mara a este QR\n\n> El QR se renueva solo \u23f3`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+          } else {
+            const codigo = await sock.requestPairingCode(numeroSub)
+            const formateado = String(codigo || "").match(/.{1,4}/g)?.join("-") || String(codigo || "")
+            await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} tu codigo es:\n\n> ${formateado}\n\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular con el n\u00famero de tel\u00e9fono\n> 4. Escribir el c\u00f3digo de arriba`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+          }
+        } catch (e) {
+          console.log("[SUBBOT] error mandando QR:", e?.message || e)
+        }
+      })()
     }
 
     if (connection === "close") {
@@ -1017,7 +1047,7 @@ async function startBot(opts = {}) {
         setTimeout(() => {
           const actual = SUBBOTS.get(numeroSub)
           if (!actual || actual.token !== tokenViejo) return // hubo reinicio nuevo: no duplicar socket
-          startBot({ esSub: true, numeroSub, respuestaSock: opts.respuestaSock, respuestaJid: opts.respuestaJid }).catch((e) => console.log("[SUBBOT] reconexion falla:", e?.message || e))
+          startBot({ esSub: true, numeroSub, respuestaSock: opts.respuestaSock, respuestaJid: opts.respuestaJid, modoQr: opts.modoQr }).catch((e) => console.log("[SUBBOT] reconexion falla:", e?.message || e))
         }, espera)
         return
       }
@@ -3041,9 +3071,11 @@ case "video":
             await reply(`${panel(`SUB-BOT`, `> Ese número ya es el bot principal ✅`)}`)
             return
           }
-          await reply(`${panel(`SUB-BOT`, `> 🔗 Conectando +${numeroDestino}...\n> En un momento te llega el código de vinculación`)}`)
+          const modoQr = command === "qr"
+          const jidDestino = `${numeroDestino}@s.whatsapp.net`
+          await sock.sendMessage(from, { text: `${panel(`SUB-BOT`, `> 🔗 Conectando @${numeroDestino}...\n> En un momento te llega el ${modoQr ? "QR para escanear 📲" : "código de vinculación 🔢"}`)}`, mentions: [jidDestino] })
           try {
-            await iniciarSubBot(numeroDestino, from, sock)
+            await iniciarSubBot(numeroDestino, from, sock, { modoQr })
           } catch (e) {
             await reply(`${panel(`SUB-BOT`, `> ❌ ${String(e?.message || "No se pudo conectar")}`)}`)
           }
