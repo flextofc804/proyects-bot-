@@ -1188,67 +1188,24 @@ async function zetaCoreTtSearchOnce(query, limit = 5) {
 
 async function mediaFile(videoId, kind) {
   const prefix = `zenith_${kind}_${Date.now()}_${Math.floor(Math.random() * 100000)}`
-  const errors = []
-  let file = null
-  if (customApiInfo()) {
-    try {
-      return await customApiDownload(videoId, kind, prefix)
-    } catch (e) {
-      const message = String(e?.message || e)
-      log(`API propia falló: ${message}`)
-      errors.push(`API propia: ${message}`)
-      cleanPrefix(prefix)
-    }
-  }
+  // YouTube se descarga EXCLUSIVAMENTE via ZETA-CORE (la web API propia del dueno).
+  // Sin scraping local, sin yt-dlp, sin otras APIs ni fuentes: si ZETA-CORE no
+  // puede, se informa rapido con el motivo real (IP_BLOQUEADA reintentable ya se
+  // reintenta dentro de zetaCoreDlRetry aprovechando la rotacion de IP de Vercel).
   try {
-    return await zetaCoreYt(videoId, kind, prefix)
+    const file = await zetaCoreYt(videoId, kind, prefix)
+    if (kind === "audio") {
+      const extension = path.extname(file).toLowerCase()
+      if (extension === ".webm" || extension === ".opus") {
+        const converted = await convertAudioToMp3(file)
+        if (converted) return converted
+      }
+    }
+    return file
   } catch (e) {
-    const message = String(e?.message || e)
-    log(`ZETA-CORE falló: ${message}`)
-    errors.push(`ZETA-CORE: ${message}`)
     cleanPrefix(prefix)
+    throw new Error(String(e?.message || e))
   }
-  const localBlocked = Date.now() < ytBlockUntil
-  if (localBlocked) {
-    log(`YouTube dio bloqueo de bot hace poco: salteando scraping y yt-dlp por ${Math.ceil((ytBlockUntil - Date.now()) / 60000)} min más`)
-  }
-  if (!localBlocked) {
-    try {
-      file = await scraperDownload(videoId, kind, prefix)
-    } catch (e) {
-      const scrapeError = String(e?.message || e)
-      log(`scraping falló: ${scrapeError}`)
-      errors.push(`scraping: ${scrapeError}`)
-      cleanPrefix(prefix)
-      if (scrapeError.includes("LOGIN_REQUIRED") || scrapeError.includes("Sign in to confirm")) {
-        ytBlockUntil = Date.now() + 10 * 60 * 1000
-        log("YouTube marcó esta IP como bot: por 10 minutos las descargas saltan el scraping y yt-dlp")
-      }
-    }
-    if (!file) {
-      try {
-        file = await ytDlpDownload(videoId, kind, prefix)
-      } catch (e) {
-        const message = String(e?.message || e)
-        errors.push(`yt-dlp: ${message}`)
-        cleanPrefix(prefix)
-        if (message.includes("Sign in to confirm") || message.includes("LOGIN_REQUIRED")) {
-          ytBlockUntil = Date.now() + 10 * 60 * 1000
-          log("YouTube marcó esta IP como bot: por 10 minutos las descargas saltan el scraping y yt-dlp")
-        }
-      }
-    }
-  }
-  if (!file) throw new Error(errors.join(" | "))
-
-  if (kind === "audio") {
-    const extension = path.extname(file).toLowerCase()
-    if (extension === ".webm" || extension === ".opus") {
-      const converted = await convertAudioToMp3(file)
-      if (converted) file = converted
-    }
-  }
-  return file
 }
 
 async function convertAudioToMp3(input) {
