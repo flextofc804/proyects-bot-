@@ -877,7 +877,12 @@ const SUBBOTS = new Map()
 const MAX_SUBBOTS = 20
 const CARPETA_SUBBOTS = "subbots"
 let sockPrincipal = null
-const PEDIDO_CODIGO = new Map() // num -> vencimiento del pedido de codigo (evita codigos dobles)
+const PEDIDO_CODIGO = new Map() // num -> { vence, token, codigo } (pairing unico: un codigo por ventana)
+const VENTANA_CODIGO_MS = 600000 // ventana de 10 minutos para cada codigo de pairing
+
+function formatearCodigoVinculacion(codigo) {
+  return String(codigo || "").match(/.{1,4}/g)?.join("-") || String(codigo || "")
+}
 
 function numeroLimpioSub(x) {
   return String(x || "").replace(/[^0-9]/g, "")
@@ -898,7 +903,7 @@ function sesionSubRegistrada(dir) {
 }
 
 function textoSubBots() {
-  if (!SUBBOTS.size) return "> No hay sub-bots conectados todavia\n> Usa #code (privado) para conectar uno"
+  if (!SUBBOTS.size) return "> No hay sub-bots conectados todavia\n> Usa .code (privado) para conectar uno"
   const lineas = []
   let i = 1
   for (const [num, info] of SUBBOTS) {
@@ -912,7 +917,7 @@ function textoSubBots() {
 async function iniciarSubBot(numero, respuestaJid, respuestaSock, extra = {}) {
   const num = numeroLimpioSub(numero)
   if (!/^\d{8,13}$/.test(num)) throw new Error("El numero no es valido (che familia mandalo con codigo de pais, ejemplo: 5491127289595)")
-  if (SUBBOTS.get(num)?.conectado) throw new Error("Ese numero ya esta conectado como sub-bot. Mira la lista con #bots")
+  if (SUBBOTS.get(num)?.conectado) throw new Error("Ese numero ya esta conectado como sub-bot. Mira la lista con .bots")
   if (SUBBOTS.size >= MAX_SUBBOTS && !SUBBOTS.has(num)) throw new Error(`Hay ${MAX_SUBBOTS} sub-bots conectados: es el maximo de este servidor`)
   const yaEsta = SUBBOTS.get(num)
   if (yaEsta) yaEsta.token = "cancelado" + Date.now() // invalida reintentos pendientes del socket viejo
@@ -928,7 +933,7 @@ async function iniciarSubBot(numero, respuestaJid, respuestaSock, extra = {}) {
 async function detenerSubBot(numero, borrarSesion = false) {
   const num = numeroLimpioSub(numero)
   const info = SUBBOTS.get(num)
-  if (!info) throw new Error("Ese numero no tiene sub-bot activo. Mira la lista con #bots")
+  if (!info) throw new Error("Ese numero no tiene sub-bot activo. Mira la lista con .bots")
   try { info.sock?.end() } catch {}
   SUBBOTS.delete(num)
   if (borrarSesion) fs.rmSync(path.join(CARPETA_SUBBOTS, num), { recursive: true, force: true })
@@ -980,29 +985,34 @@ async function startBot(opts = {}) {
     const { connection, lastDisconnect } = update
 
     // Sub-bot sin sesion registrada: pedir codigo de vinculacion (pairing code, sin QR)
-    const expiroPedidoSub = (PEDIDO_CODIGO.get(numeroSub) || 0) < Date.now()
-    if (esSub && numeroSub && !opts.modoQr && !state.creds?.registered && update.qr && expiroPedidoSub) {
-      PEDIDO_CODIGO.set(numeroSub, Date.now() + 120000)
-      setTimeout(async () => {
-        try {
-          const codigo = await sock.requestPairingCode(numeroSub)
-          const formateado = String(codigo || "").match(/.{1,4}/g)?.join("-") || String(codigo || "")
-          const destinoSock = opts.respuestaSock || sockPrincipal || sock
-          const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
-          if (destinoSock?.sendMessage) {
-            await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} tu codigo es:\n\n> ${formateado}\n\n> Pasos en el otro celular:\n> 1. Abrir WhatsApp\n> 2. Configuracion > Dispositivos vinculados\n> 3. Vincular con el numero de telefono\n> 4. Escribir el codigo de arriba\n\n> El codigo dura poco \u23f3`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+    // Pairing unico: si ya hay un codigo valido en su ventana de 10 min para este socket, NO se pide otro
+    if (esSub && numeroSub && !opts.modoQr && !state.creds?.registered && update.qr) {
+      const pedidoSub = PEDIGO_CODIGO.get(numeroSub)
+      if (!pedidoSub || pedidoSub.token !== tokenSub || pedidoSub.vence < Date.now()) {
+        PEDIGO_CODIGO.set(numeroSub, { vence: Date.now() + VENTANA_CODIGO_MS, token: tokenSub, codigo: null })
+        setTimeout(async () => {
+          try {
+            const codigo = await sock.requestPairingCode(numeroSub)
+            const formateado = formatearCodigoVinculacion(codigo)
+            const pedidoActual = PEDIGO_CODIGO.get(numeroSub) || {}
+            PEDIGO_CODIGO.set(numeroSub, { ...pedidoActual, vence: pedidoActual.vence || (Date.now() + VENTANA_CODIGO_MS), token: tokenSub, codigo: formateado })
+            const destinoSock = opts.respuestaSock || sockPrincipal || sock
+            const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
+            if (destinoSock?.sendMessage) {
+              await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} te mando tu codigo en el mensaje siguiente \ud83d\udd22\n> Tiene una ventana de 10 minutos \u23f3\n\n> Pasos en el otro celular:\n> 1. Abrir WhatsApp\n> 2. Configuracion > Dispositivos vinculados\n> 3. Vincular con el numero de telefono\n> 4. Escribir el codigo del mensaje siguiente\n\n> Si lo perdes escribi .reenviar y te lo mando de nuevo \ud83d\udc8c`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+              await destinoSock.sendMessage(destinoJid, { text: formateado })
+            }
+            console.log(`[SUBBOT] codigo de vinculacion pedido para +${numeroSub}`)
+          } catch (e) {
+            PEDIGO_CODIGO.delete(numeroSub) // permitir reintentar el codigo
+            console.log("[SUBBOT] error pidiendo codigo:", e?.message || e)
           }
-          console.log(`[SUBBOT] codigo de vinculacion pedido para +${numeroSub}`)
-        } catch (e) {
-          PEDIDO_CODIGO.delete(numeroSub) // permitir reintentar el codigo
-          console.log("[SUBBOT] error pidiendo codigo:", e?.message || e)
-        }
-      }, 3000)
+        }, 3000)
+      }
     }
 
-    // Sub-bot modo QR: mandar el QR como imagen para escanear directo
-    if (esSub && numeroSub && opts.modoQr && update.qr && opts.ultimoQr !== update.qr && (Number(opts.qrMandados) || 0) < 3) {
-      opts.ultimoQr = update.qr
+    // Sub-bot modo QR: mandar el QR UNA SOLA VEZ (one-shot), se escanea el que llega y ya
+    if (esSub && numeroSub && opts.modoQr && update.qr && (Number(opts.qrMandados) || 0) < 1) {
       opts.qrMandados = (Number(opts.qrMandados) || 0) + 1
       ;(async () => {
         try {
@@ -1018,11 +1028,18 @@ async function startBot(opts = {}) {
             console.log("[SUBBOT] falta la libreria qrcode, caigo a codigo de vinculacion:", errQr?.message || errQr)
           }
           if (png) {
-            await destinoSock.sendMessage(destinoJid, { image: png, caption: panel(`QR DEL SUB-BOT`, `> @${numeroSub} escane\u00e1 este QR \ud83d\udcf2\n> En el tel\u00e9fono del sub-bot:\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular un dispositivo\n> 4. Apuntar la c\u00e1mara a este QR\n\n> El QR se renueva solo \u23f3`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+            await destinoSock.sendMessage(destinoJid, { image: png, caption: panel(`QR DEL SUB-BOT`, `> @${numeroSub} escane\u00e1 este QR \ud83d\udcf2\n> En el tel\u00e9fono del sub-bot:\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular un dispositivo\n> 4. Apuntar la c\u00e1mara a este QR\n\n> Es un solo QR \u23f3 (si se vence pedi otro con .qr)`), mentions: [`${numeroSub}@s.whatsapp.net`] })
           } else {
-            const codigo = await sock.requestPairingCode(numeroSub)
-            const formateado = String(codigo || "").match(/.{1,4}/g)?.join("-") || String(codigo || "")
-            await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} tu codigo es:\n\n> ${formateado}\n\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular con el n\u00famero de tel\u00e9fono\n> 4. Escribir el c\u00f3digo de arriba`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+            const pedidoQrFall = PEDIGO_CODIGO.get(numeroSub)
+            if (pedidoQrFall?.codigo && pedidoQrFall.vence >= Date.now()) {
+              await destinoSock.sendMessage(destinoJid, { text: pedidoQrFall.codigo })
+            } else {
+              const codigo = await sock.requestPairingCode(numeroSub)
+              const formateado = formatearCodigoVinculacion(codigo)
+              PEDIGO_CODIGO.set(numeroSub, { vence: Date.now() + VENTANA_CODIGO_MS, token: tokenSub, codigo: formateado })
+              await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} te mando tu codigo en el mensaje siguiente \ud83d\udd22\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular con el n\u00famero de tel\u00e9fono\n> 4. Escribir el c\u00f3digo del mensaje siguiente`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+              await destinoSock.sendMessage(destinoJid, { text: formateado })
+            }
           }
         } catch (e) {
           console.log("[SUBBOT] error mandando QR:", e?.message || e)
@@ -1033,20 +1050,51 @@ async function startBot(opts = {}) {
     if (connection === "close") {
       const statusCode = lastDisconnect?.error?.output?.statusCode
       if (esSub) {
-        // Desvinculado desde el celular: borrar carpeta y soltar
-        // Nunca registrada despues de muchos intentos: limpiar (sin bucles infinitos)
-        const motivoMortal = statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.forbidden
-        const registrada = sesionSubRegistrada(sessionDir)
-        const previa = SUBBOTS.get(numeroSub) || {}
-        const intentos = (Number(previa.intentos) || 0) + 1
-        if (motivoMortal || (!registrada && intentos >= 12)) {
-          try { fs.rmSync(sessionDir, { recursive: true, force: true }) } catch {}
-          SUBBOTS.delete(numeroSub)
-          PEDIDO_CODIGO.delete(numeroSub)
-          console.log(`[SUBBOT] sesion eliminada para +${numeroSub} (${motivoMortal ? "desvinculada en el celular" : "nunca se completo la vinculacion"})`)
+        // Guarda anti-fantasma: si este socket ya fue reemplazado (.code nuevo, .stop o .delsub),
+        // su cierre NO toca el estado nuevo ni dispara reintentos (evita bucles y #stop que no pega)
+        const entradaSub = SUBBOTS.get(numeroSub)
+        if (!entradaSub || entradaSub.token !== tokenSub) {
+          console.log(`[SUBBOT] cierre ignorado de socket obsoleto para +${numeroSub}`)
           return
         }
-        // Otro motivo: reconectar con backoff (5s, 10s, ... max 60s)
+        const motivoMortal = statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.forbidden
+        const registrada = sesionSubRegistrada(sessionDir)
+        if (motivoMortal) {
+          // Desvinculado desde el celular: borrar sesion y soltar (sin bucles)
+          try { fs.rmSync(sessionDir, { recursive: true, force: true }) } catch {}
+          SUBBOTS.delete(numeroSub)
+          PEDIGO_CODIGO.delete(numeroSub)
+          const destinoSock = opts.respuestaSock || sockPrincipal || sock
+          const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
+          if (destinoSock?.sendMessage) {
+            destinoSock.sendMessage(destinoJid, { text: panel(`SUB-BOT DESVINCULADO`, `> +${numeroSub} fue desvinculado desde el celular \ud83d\udeaa\n> Para volver a vincularlo escribi: .code ${numeroSub}`) }).catch(() => {})
+          }
+          console.log(`[SUBBOT] sesion eliminada para +${numeroSub} (desvinculada en el celular)`)
+          return
+        }
+        if (!registrada) {
+          // SIN BUCLES: la vinculacion nunca se completo -> no se reintenta solo.
+          // Se limpia y se lo dice al usuario, que pide un codigo fresco con .code
+          try { fs.rmSync(sessionDir, { recursive: true, force: true }) } catch {}
+          SUBBOTS.delete(numeroSub)
+          PEDIGO_CODIGO.delete(numeroSub)
+          const destinoSock = opts.respuestaSock || sockPrincipal || sock
+          const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
+          if (destinoSock?.sendMessage) {
+            destinoSock.sendMessage(destinoJid, { text: panel(`VINCULACION INCOMPLETA`, `> @${numeroSub} el codigo no se ingreso a tiempo \u23f3\n> Pedite otro con un solo comando:\n> .code ${numeroSub}\n> (llega en un mensaje aparte, tenes 10 minutos)`) }).catch(() => {})
+          }
+          console.log(`[SUBBOT] sesion sin completar para +${numeroSub}: limpiada, sin reintentos automaticos (anti-bucle)`)
+          return
+        }
+        // Sesion YA vinculada: reconectar con backoff acotado (5s, 10s, ... max 60s, tope 12 intentos)
+        const previa = SUBBOTS.get(numeroSub) || {}
+        const intentos = (Number(previa.intentos) || 0) + 1
+        if (intentos >= 12) {
+          SUBBOTS.delete(numeroSub)
+          PEDIGO_CODIGO.delete(numeroSub)
+          console.log(`[SUBBOT] +${numeroSub} agoto los 12 reintentos: se suelta la sesion (queda guardada en disco)`)
+          return
+        }
         SUBBOTS.set(numeroSub, { ...previa, numero: numeroSub, token: tokenSub, conectado: false, sock: null, intentos })
         const espera = Math.min(intentos * 5000, 60000)
         console.log(`[SUBBOT] +${numeroSub} desconectado, reintentando en ${espera / 1000}s (intento ${intentos})`)
@@ -1054,7 +1102,7 @@ async function startBot(opts = {}) {
         setTimeout(() => {
           const actual = SUBBOTS.get(numeroSub)
           if (!actual || actual.token !== tokenViejo) return // hubo reinicio nuevo: no duplicar socket
-          startBot({ esSub: true, numeroSub, respuestaSock: opts.respuestaSock, respuestaJid: opts.respuestaJid, modoQr: opts.modoQr }).catch((e) => console.log("[SUBBOT] reconexion falla:", e?.message || e))
+          startBot({ esSub: true, numeroSub, respuestaSock: opts.respuestaSock, respuestaJid: opts.respuestaJid }).catch((e) => console.log("[SUBBOT] reconexion falla:", e?.message || e))
         }, espera)
         return
       }
@@ -1075,7 +1123,7 @@ async function startBot(opts = {}) {
             destinoSock.sendMessage(destinoJid, { text: panel(`SUB-BOT CONECTADO`, `> ✅ Fuiste vinculado como sub-bot
 > Ya podes usar TODOS los comandos desde este numero
 > (descargas, menu, juegos, todo)
-> Para ver la lista: #bots`) }).catch(() => {})
+> Para ver la lista: .bots`) }).catch(() => {})
           }
         }
       } else {
@@ -3057,7 +3105,7 @@ case "video":
         case "serbot":
         case "subbot": {
           if (isGroup) {
-            await reply(`${panel(`SUB-BOT`, `> El código se pide por mensaje privado\n> Escribime directo al chat privado del bot: #code`)}`)
+            await reply(`${panel(`SUB-BOT`, `> El código se pide por mensaje privado\n> Escribime directo al chat privado del bot: .code`)}`)
             return
           }
           // Resolver @mención: usar el JID real (@s.whatsapp.net), NO el LID interno (ese no es un número de teléfono)
@@ -3067,7 +3115,7 @@ case "video":
             || []).map((j) => String(j))
           const mencionPN = mencionados.find((j) => j.endsWith("@s.whatsapp.net"))
           if (mencionados.length && !mencionPN) {
-            await reply(`${panel(`SUB-BOT`, `> No pude sacar el número real de esa mención 😕\n> Escribilo a mano con código de país\n> Ejemplo: #code 5491127289595`)}`)
+            await reply(`${panel(`SUB-BOT`, `> No pude sacar el número real de esa mención 😕\n> Escribilo a mano con código de país\n> Ejemplo: .code 5491127289595`)}`)
             return
           }
           let numeroDestino = mencionPN ? jidANumero(mencionPN) : ""
@@ -3075,7 +3123,7 @@ case "video":
           if (!numeroDestino) numeroDestino = jidANumero(sender)
           // Guardia anti-LID: los numeros internos de WhatsApp miden 15+ digitos y no son telefonos reales
           if (numeroDestino.length > 13) {
-            await reply(`${panel(`SUB-BOT`, `> Ese me lo tomó como un número interno de WhatsApp 😕\n> Escribilo a mano con código de país, ejemplo:\n> #code 5491127289595`)}`)
+            await reply(`${panel(`SUB-BOT`, `> Ese me lo tomó como un número interno de WhatsApp 😕\n> Escribilo a mano con código de país, ejemplo:\n> .code 5491127289595`)}`)
             return
           }
           const numPrincipal = ((sock.user?.id || "").split(":")[0] || "").replace(/[^0-9]/g, "")
@@ -3091,6 +3139,23 @@ case "video":
           } catch (e) {
             await reply(`${panel(`SUB-BOT`, `> ❌ ${String(e?.message || "No se pudo conectar")}`)}`)
           }
+          break
+        }
+
+        case "reenviar":
+        case "recode": {
+          if (isGroup) {
+            await reply(`${panel(`CODIGO DE VINCULACION`, `> Este comando es por privado\n> Escribime al chat privado del bot: .reenviar`)}`)
+            return
+          }
+          const pedidoReenvio = PEDIGO_CODIGO.get(senderNumber)
+          if (!pedidoReenvio?.codigo || pedidoReenvio.vence < Date.now()) {
+            await reply(`${panel(`CODIGO DE VINCULACION`, `> No tenes un codigo de vinculación activo \u23f3\n> Pedí uno con .code <numero>\n> Ejemplo: .code 5491127289595`)}`)
+            return
+          }
+          const minutosRestantes = Math.max(1, Math.ceil((pedidoReenvio.vence - Date.now()) / 60000))
+          await reply(`${panel(`CODIGO DE VINCULACION`, `> @${senderNumber} reenviando tu codigo \ud83d\udc8c\n> Vence en ${minutosRestantes} min\n> Lo envio en el mensaje siguiente`)}`)
+          await sock.sendMessage(from, { text: pedidoReenvio.codigo })
           break
         }
 
@@ -3329,7 +3394,7 @@ case "video":
           }
           try {
             await detenerSubBot(numDel, true)
-            await reply(`${panel(`SUB-BOT ELIMINADO`, `> 🗑 +${numDel} fue desconectado\n> Su sesion fue borrada por completo\n> Ese numero tiene que vincularse de nuevo con #code`)}`)
+            await reply(`${panel(`SUB-BOT ELIMINADO`, `> 🗑 +${numDel} fue desconectado\n> Su sesion fue borrada por completo\n> Ese numero tiene que vincularse de nuevo con .code`)}`)
           } catch (e) {
             await reply(String(e?.message || "No se pudo eliminar ese sub-bot"))
           }

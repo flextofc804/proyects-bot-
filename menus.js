@@ -243,6 +243,7 @@ const menuCategories = {
         items: [
           { cmd: "qr", desc: "código QR" },
           { cmd: "code", desc: "código de pairing" },
+          { cmd: "reenviar", desc: "reenviar tu código de pairing" },
           { cmd: "premium", desc: "info premium" },
           { cmd: "botinfo", desc: "info del bot" }
         ]
