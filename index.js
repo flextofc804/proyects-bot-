@@ -877,7 +877,7 @@ const SUBBOTS = new Map()
 const MAX_SUBBOTS = 20
 const CARPETA_SUBBOTS = "subbots"
 let sockPrincipal = null
-const PEDIDO_CODIGO = new Map() // num -> { vence, token, codigo } (pairing unico: un codigo por ventana)
+const PEDIGO_CODIGO = new Map() // num -> { vence, token, codigo } (pairing unico: un codigo por ventana)
 const VENTANA_CODIGO_MS = 600000 // ventana de 10 minutos para cada codigo de pairing
 
 function formatearCodigoVinculacion(codigo) {
@@ -921,7 +921,7 @@ async function iniciarSubBot(numero, respuestaJid, respuestaSock, extra = {}) {
   if (SUBBOTS.size >= MAX_SUBBOTS && !SUBBOTS.has(num)) throw new Error(`Hay ${MAX_SUBBOTS} sub-bots conectados: es el maximo de este servidor`)
   const yaEsta = SUBBOTS.get(num)
   if (yaEsta) yaEsta.token = "cancelado" + Date.now() // invalida reintentos pendientes del socket viejo
-  PEDIDO_CODIGO.delete(num) // pedido manual nuevo = codigo fresco garantizado
+  PEDIGO_CODIGO.delete(num) // pedido manual nuevo = codigo fresco garantizado
   if (yaEsta?.sock) {
     try { yaEsta.sock.end() } catch {}
     yaEsta.sock = null
@@ -1114,7 +1114,7 @@ async function startBot(opts = {}) {
       if (esSub) {
         const previa = SUBBOTS.get(numeroSub) || {}
         SUBBOTS.set(numeroSub, { ...previa, numero: numeroSub, token: tokenSub, sock, conectado: true, desde: Date.now(), intentos: 0 })
-        PEDIDO_CODIGO.delete(numeroSub)
+        PEDIGO_CODIGO.delete(numeroSub)
         console.log(`[SUBBOT] +${numeroSub} conectado como sub-bot ✅`)
         if (!previa.conectado) {
           const destinoSock = opts.respuestaSock || sockPrincipal || sock
