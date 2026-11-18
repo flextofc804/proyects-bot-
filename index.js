@@ -877,7 +877,12 @@ const SUBBOTS = new Map()
 const MAX_SUBBOTS = 20
 const CARPETA_SUBBOTS = "subbots"
 let sockPrincipal = null
-const PEDIDO_CODIGO = new Map() // num -> vencimiento del pedido de codigo (evita codigos dobles)
+const PEDIDO_CODIGO = new Map() // num -> { vence, token, codigo } (pairing unico: un codigo por ventana)
+const VENTANA_CODIGO_MS = 600000 // ventana de 10 minutos para cada codigo de pairing
+
+function formatearCodigoVinculacion(codigo) {
+  return String(codigo || "").match(/.{1,4}/g)?.join("-") || String(codigo || "")
+}
 
 function numeroLimpioSub(x) {
   return String(x || "").replace(/[^0-9]/g, "")
@@ -980,29 +985,34 @@ async function startBot(opts = {}) {
     const { connection, lastDisconnect } = update
 
     // Sub-bot sin sesion registrada: pedir codigo de vinculacion (pairing code, sin QR)
-    const expiroPedidoSub = (PEDIDO_CODIGO.get(numeroSub) || 0) < Date.now()
-    if (esSub && numeroSub && !opts.modoQr && !state.creds?.registered && update.qr && expiroPedidoSub) {
-      PEDIDO_CODIGO.set(numeroSub, Date.now() + 120000)
-      setTimeout(async () => {
-        try {
-          const codigo = await sock.requestPairingCode(numeroSub)
-          const formateado = String(codigo || "").match(/.{1,4}/g)?.join("-") || String(codigo || "")
-          const destinoSock = opts.respuestaSock || sockPrincipal || sock
-          const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
-          if (destinoSock?.sendMessage) {
-            await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} tu codigo es:\n\n> ${formateado}\n\n> Pasos en el otro celular:\n> 1. Abrir WhatsApp\n> 2. Configuracion > Dispositivos vinculados\n> 3. Vincular con el numero de telefono\n> 4. Escribir el codigo de arriba\n\n> El codigo dura poco \u23f3`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+    // Pairing unico: si ya hay un codigo valido en su ventana de 10 min para este socket, NO se pide otro
+    if (esSub && numeroSub && !opts.modoQr && !state.creds?.registered && update.qr) {
+      const pedidoSub = PEDIGO_CODIGO.get(numeroSub)
+      if (!pedidoSub || pedidoSub.token !== tokenSub || pedidoSub.vence < Date.now()) {
+        PEDIGO_CODIGO.set(numeroSub, { vence: Date.now() + VENTANA_CODIGO_MS, token: tokenSub, codigo: null })
+        setTimeout(async () => {
+          try {
+            const codigo = await sock.requestPairingCode(numeroSub)
+            const formateado = formatearCodigoVinculacion(codigo)
+            const pedidoActual = PEDIGO_CODIGO.get(numeroSub) || {}
+            PEDIGO_CODIGO.set(numeroSub, { ...pedidoActual, vence: pedidoActual.vence || (Date.now() + VENTANA_CODIGO_MS), token: tokenSub, codigo: formateado })
+            const destinoSock = opts.respuestaSock || sockPrincipal || sock
+            const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
+            if (destinoSock?.sendMessage) {
+              await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} te mando tu codigo en el mensaje siguiente \ud83d\udd22\n> Tiene una ventana de 10 minutos \u23f3\n\n> Pasos en el otro celular:\n> 1. Abrir WhatsApp\n> 2. Configuracion > Dispositivos vinculados\n> 3. Vincular con el numero de telefono\n> 4. Escribir el codigo del mensaje siguiente\n\n> Si lo perdes escribi #reenviar y te lo mando de nuevo \ud83d\udc8c`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+              await destinoSock.sendMessage(destinoJid, { text: formateado })
+            }
+            console.log(`[SUBBOT] codigo de vinculacion pedido para +${numeroSub}`)
+          } catch (e) {
+            PEDIGO_CODIGO.delete(numeroSub) // permitir reintentar el codigo
+            console.log("[SUBBOT] error pidiendo codigo:", e?.message || e)
           }
-          console.log(`[SUBBOT] codigo de vinculacion pedido para +${numeroSub}`)
-        } catch (e) {
-          PEDIDO_CODIGO.delete(numeroSub) // permitir reintentar el codigo
-          console.log("[SUBBOT] error pidiendo codigo:", e?.message || e)
-        }
-      }, 3000)
+        }, 3000)
+      }
     }
 
-    // Sub-bot modo QR: mandar el QR como imagen para escanear directo
-    if (esSub && numeroSub && opts.modoQr && update.qr && opts.ultimoQr !== update.qr && (Number(opts.qrMandados) || 0) < 3) {
-      opts.ultimoQr = update.qr
+    // Sub-bot modo QR: mandar el QR UNA SOLA VEZ (one-shot), se escanea el que llega y ya
+    if (esSub && numeroSub && opts.modoQr && update.qr && (Number(opts.qrMandados) || 0) < 1) {
       opts.qrMandados = (Number(opts.qrMandados) || 0) + 1
       ;(async () => {
         try {
@@ -1018,11 +1028,18 @@ async function startBot(opts = {}) {
             console.log("[SUBBOT] falta la libreria qrcode, caigo a codigo de vinculacion:", errQr?.message || errQr)
           }
           if (png) {
-            await destinoSock.sendMessage(destinoJid, { image: png, caption: panel(`QR DEL SUB-BOT`, `> @${numeroSub} escane\u00e1 este QR \ud83d\udcf2\n> En el tel\u00e9fono del sub-bot:\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular un dispositivo\n> 4. Apuntar la c\u00e1mara a este QR\n\n> El QR se renueva solo \u23f3`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+            await destinoSock.sendMessage(destinoJid, { image: png, caption: panel(`QR DEL SUB-BOT`, `> @${numeroSub} escane\u00e1 este QR \ud83d\udcf2\n> En el tel\u00e9fono del sub-bot:\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular un dispositivo\n> 4. Apuntar la c\u00e1mara a este QR\n\n> Es un solo QR \u23f3 (si se vence pedi otro con #qr)`), mentions: [`${numeroSub}@s.whatsapp.net`] })
           } else {
-            const codigo = await sock.requestPairingCode(numeroSub)
-            const formateado = String(codigo || "").match(/.{1,4}/g)?.join("-") || String(codigo || "")
-            await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} tu codigo es:\n\n> ${formateado}\n\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular con el n\u00famero de tel\u00e9fono\n> 4. Escribir el c\u00f3digo de arriba`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+            const pedidoQrFall = PEDIGO_CODIGO.get(numeroSub)
+            if (pedidoQrFall?.codigo && pedidoQrFall.vence >= Date.now()) {
+              await destinoSock.sendMessage(destinoJid, { text: pedidoQrFall.codigo })
+            } else {
+              const codigo = await sock.requestPairingCode(numeroSub)
+              const formateado = formatearCodigoVinculacion(codigo)
+              PEDIGO_CODIGO.set(numeroSub, { vence: Date.now() + VENTANA_CODIGO_MS, token: tokenSub, codigo: formateado })
+              await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} te mando tu codigo en el mensaje siguiente \ud83d\udd22\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular con el n\u00famero de tel\u00e9fono\n> 4. Escribir el c\u00f3digo del mensaje siguiente`), mentions: [`${numeroSub}@s.whatsapp.net`] })
+              await destinoSock.sendMessage(destinoJid, { text: formateado })
+            }
           }
         } catch (e) {
           console.log("[SUBBOT] error mandando QR:", e?.message || e)
@@ -3091,6 +3108,23 @@ case "video":
           } catch (e) {
             await reply(`${panel(`SUB-BOT`, `> ❌ ${String(e?.message || "No se pudo conectar")}`)}`)
           }
+          break
+        }
+
+        case "reenviar":
+        case "recode": {
+          if (isGroup) {
+            await reply(`${panel(`CODIGO DE VINCULACION`, `> Este comando es por privado\n> Escribime al chat privado del bot: #reenviar`)}`)
+            return
+          }
+          const pedidoReenvio = PEDIGO_CODIGO.get(senderNumber)
+          if (!pedidoReenvio?.codigo || pedidoReenvio.vence < Date.now()) {
+            await reply(`${panel(`CODIGO DE VINCULACION`, `> No tenes un codigo de vinculación activo \u23f3\n> Pedí uno con #code <numero>\n> Ejemplo: #code 5491127289595`)}`)
+            return
+          }
+          const minutosRestantes = Math.max(1, Math.ceil((pedidoReenvio.vence - Date.now()) / 60000))
+          await reply(`${panel(`CODIGO DE VINCULACION`, `> @${senderNumber} reenviando tu codigo \ud83d\udc8c\n> Vence en ${minutosRestantes} min\n> Lo envio en el mensaje siguiente`)}`)
+          await sock.sendMessage(from, { text: pedidoReenvio.codigo })
           break
         }
 
