@@ -947,7 +947,18 @@ async function zetaCoreDlRetry(query, kind, prefix, quality) {
       lastError = e
       const msg = String(e?.message || e)
       if (msg.includes("falta la clave")) throw e
-      if (attempt < 3) await sleepMs(3000)
+      // IP_BLOQUEADA: la API ahora falla rapido (<10s) y pide reintentar
+      // porque Vercel rota la IP de salida en cada pedido nuevo.
+      if (msg.includes("IP_BLOQUEADA")) {
+        if (attempt < 3) await sleepMs(attempt === 1 ? 2000 : 4000)
+        continue
+      }
+      // Otros fallos (sin media, login requerido, etc.): un solo reintento corto.
+      if (attempt === 1) {
+        await sleepMs(1500)
+        continue
+      }
+      throw e
     }
   }
   throw lastError
@@ -1000,7 +1011,12 @@ async function zetaCoreJson(route, params, timeoutMs = 45000) {
   }
   const data = await response.json()
   if (!data || data.ok !== true) {
-    throw new Error(data?.error?.message || data?.message || `HTTP ${response.status}`)
+    const msg =
+      data?.error?.message ||
+      (typeof data?.error === "string" ? data.error : null) ||
+      data?.message ||
+      `HTTP ${response.status}`
+    throw new Error(msg)
   }
   return data
 }
@@ -1141,6 +1157,22 @@ async function zetaCorePin(query, limit = 5) {
 }
 
 async function zetaCoreTtSearch(query, limit = 5) {
+  let lastError = null
+  for (let intento = 1; intento <= 2; intento++) {
+    try {
+      return await zetaCoreTtSearchOnce(query, limit)
+    } catch (e) {
+      lastError = e
+      const msg = String(e?.message || e)
+      // BUSQUEDA_INESTABLE: la API avisa que es intermitente y pide reintentar.
+      if (!(msg.includes("BUSQUEDA_INESTABLE") || msg.includes("fuentes de busqueda")) || intento >= 2) throw e
+      await sleepMs(2500)
+    }
+  }
+  throw lastError
+}
+
+async function zetaCoreTtSearchOnce(query, limit = 5) {
   const data = await zetaCoreJson("/ttsearch", new URLSearchParams({ query, limit: String(limit) }), 15000)
   const results = (Array.isArray(data.results) ? data.results : [])
     .filter((r) => r && /^\d{10,25}$/.test(String(r.videoId || "")) && /^https?:\/\//.test(String(r.url || "")))
