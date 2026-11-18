@@ -2005,7 +2005,7 @@ case "play":
             if (audioBuffer.length > 20 * 1024 * 1024) {
               await sock.sendMessage(
                 from,
-                { document: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", fileName: `zenith_audio${audioExt || ".m4a"}`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Audio largo enviado como documento" },
+                { document: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", fileName: `erzabot_audio${audioExt || ".m4a"}`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Audio largo enviado como documento" },
                 { quoted: msg }
               )
             } else {
@@ -2057,7 +2057,7 @@ case "video":
     const sendVideoDocumento = () =>
       sock.sendMessage(
         from,
-        { document: { url: videoFile }, mimetype: "video/mp4", fileName: `zenith_video${videoExt || ".mp4"}`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video pesado enviado como documento" },
+        { document: { url: videoFile }, mimetype: "video/mp4", fileName: `erzabot_video${videoExt || ".mp4"}`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video pesado enviado como documento" },
         { quoted: msg }
       )
     if (videoSize > 50 * 1024 * 1024) {
