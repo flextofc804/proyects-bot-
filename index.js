@@ -2445,7 +2445,7 @@ case "video":
     return
   }
   try {
-    await reply("Buscando y descargando video...")
+    reaccionar(sock, from, msg, ["\u23f3"]).catch(() => {})
     let videoQuery = text
     if (/^\d+$/.test(text.trim()) && searchHistory.has(from)) {
       const picked = searchHistory.get(from)[Number(text.trim()) - 1]
