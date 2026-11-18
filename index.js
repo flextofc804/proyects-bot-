@@ -989,9 +989,11 @@ async function startBot(opts = {}) {
     if (esSub && numeroSub && !opts.modoQr && !state.creds?.registered && update.qr) {
       const pedidoSub = PEDIGO_CODIGO.get(numeroSub)
       if (!pedidoSub || pedidoSub.token !== tokenSub || pedidoSub.vence < Date.now()) {
-        PEDIGO_CODIGO.set(numeroSub, { vence: Date.now() + VENTANA_CODIGO_MS, token: tokenSub, codigo: null })
+        PEDIGO_CODIGO.set(numeroSub, { ...pedidoSub, vence: Date.now() + VENTANA_CODIGO_MS, token: tokenSub, codigo: null })
+        const tokenPedido = tokenSub
         setTimeout(async () => {
           try {
+            if (tokenPedido !== tokenSub) return // el socket ya no es el vigente: no pedir codigo muerto
             const codigo = await sock.requestPairingCode(numeroSub)
             const formateado = formatearCodigoVinculacion(codigo)
             const pedidoActual = PEDIGO_CODIGO.get(numeroSub) || {}
@@ -1004,7 +1006,8 @@ async function startBot(opts = {}) {
             }
             console.log(`[SUBBOT] codigo de vinculacion pedido para +${numeroSub}`)
           } catch (e) {
-            PEDIGO_CODIGO.delete(numeroSub) // permitir reintentar el codigo
+            const pedidoError = PEDIGO_CODIGO.get(numeroSub)
+            if (!pedidoError || pedidoError.token === tokenPedido) PEDIGO_CODIGO.delete(numeroSub) // permitir reintentar el codigo
             console.log("[SUBBOT] error pidiendo codigo:", e?.message || e)
           }
         }, 3000)
@@ -1036,7 +1039,7 @@ async function startBot(opts = {}) {
             } else {
               const codigo = await sock.requestPairingCode(numeroSub)
               const formateado = formatearCodigoVinculacion(codigo)
-              PEDIGO_CODIGO.set(numeroSub, { vence: Date.now() + VENTANA_CODIGO_MS, token: tokenSub, codigo: formateado })
+              PEDIGO_CODIGO.set(numeroSub, { ...(PEDIGO_CODIGO.get(numeroSub) || {}), vence: Date.now() + VENTANA_CODIGO_MS, token: tokenSub, codigo: formateado })
               await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} te mando tu codigo en el mensaje siguiente \ud83d\udd22\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular con el n\u00famero de tel\u00e9fono\n> 4. Escribir el c\u00f3digo del mensaje siguiente`), mentions: [`${numeroSub}@s.whatsapp.net`] })
               await destinoSock.sendMessage(destinoJid, { text: formateado })
             }
@@ -1073,17 +1076,36 @@ async function startBot(opts = {}) {
           return
         }
         if (!registrada) {
-          // SIN BUCLES: la vinculacion nunca se completo -> no se reintenta solo.
-          // Se limpia y se lo dice al usuario, que pide un codigo fresco con .code
-          try { fs.rmSync(sessionDir, { recursive: true, force: true }) } catch {}
-          SUBBOTS.delete(numeroSub)
-          PEDIGO_CODIGO.delete(numeroSub)
+          // Pairing pendiente: socket NUEVO con codigo FRESCO automatico (tope 3, sin bucles)
+          // Si se agotan los 3 codigos: se limpia todo y se avisa que pida .code manual
+          const pedido = PEDIGO_CODIGO.get(numeroSub) || {}
+          const intentosPair = (Number(pedido.intentos) || 0) + 1
+          PEDIGO_CODIGO.set(numeroSub, { ...pedido, intentos: intentosPair })
+          if (intentosPair > 3) {
+            try { fs.rmSync(sessionDir, { recursive: true, force: true }) } catch {}
+            SUBBOTS.delete(numeroSub)
+            PEDIGO_CODIGO.delete(numeroSub)
+            const destinoSock2 = opts.respuestaSock || sockPrincipal || sock
+            const destinoJid2 = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
+            if (destinoSock2?.sendMessage) {
+            destinoSock2.sendMessage(destinoJid2, { text: panel(`VINCULACION INCOMPLETA`, `> @${numeroSub} el codigo no se ingreso a tiempo \u23f3\n> Pedite otro con un solo comando:\n> .code ${numeroSub}\n> (llega en un mensaje aparte, tenes 10 minutos)`) }).catch(() => {})
+            }
+            console.log(`[SUBBOT] sesion sin completar para +${numeroSub}: limpiada, sin reintentos automaticos (anti-bucle)`)
+            return
+          }
+          const tokenViejo = opts.token
           const destinoSock = opts.respuestaSock || sockPrincipal || sock
           const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
           if (destinoSock?.sendMessage) {
-            destinoSock.sendMessage(destinoJid, { text: panel(`VINCULACION INCOMPLETA`, `> @${numeroSub} el codigo no se ingreso a tiempo \u23f3\n> Pedite otro con un solo comando:\n> .code ${numeroSub}\n> (llega en un mensaje aparte, tenes 10 minutos)`) }).catch(() => {})
+            destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO VENCIDO`, `> @${numeroSub} el codigo anterior ya no sirve \u23f3\n> Te mando uno NUEVO en un momento \ud83d\udd01\n> Us\u00e1 el que te llega en el mensaje siguiente (el viejo NO sirve)`) }).catch(() => {})
           }
-          console.log(`[SUBBOT] sesion sin completar para +${numeroSub}: limpiada, sin reintentos automaticos (anti-bucle)`)
+          console.log(`[SUBBOT] +${numeroSub} no se vinculo: pido codigo nuevo (intento ${intentosPair}/3)`)
+          setTimeout(() => {
+            const actual = SUBBOTS.get(numeroSub)
+            if (!actual || actual.token !== tokenViejo) return // .stop o .code nuevo: no reanimar socket viejo
+            SUBBOTS.delete(numeroSub) // startBot crea entry nueva con token fresco (anti-fantasma consistente)
+            startBot({ esSub: true, numeroSub, respuestaSock: opts.respuestaSock, respuestaJid: opts.respuestaJid, modoQr: opts.modoQr, qrMandados: 0 }).catch((e) => console.log("[SUBBOT] re-pairing falla:", e?.message || e))
+          }, 2500)
           return
         }
         // Sesion YA vinculada: reconectar con backoff acotado (5s, 10s, ... max 60s, tope 12 intentos)
