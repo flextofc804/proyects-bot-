@@ -421,7 +421,7 @@ function borderBottom() {
 function renderMenuHome() {
   const lines = []
   lines.push("╭───────────────────────╮")
-  lines.push("   ⚡ *Z E N I T H* ⚡")
+  lines.push("  ⋆ ୨୧ ⋆ *EʀᴢᴀBᴏᴛ-MD/OFC* ⋆ ୨୧ ⋆")
   lines.push("╰───────────────────────╯")
   lines.push(`⌁ Prefix » *${config.prefix}*  ⌁ Owner » *+5491127289595*`)
   lines.push(`⌁ Comandos » *${countAllCommands()}*  ⌁ Categorías » *${menuOrder.length}*`)
