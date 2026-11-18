@@ -883,6 +883,12 @@ function numeroLimpioSub(x) {
   return String(x || "").replace(/[^0-9]/g, "")
 }
 
+function jidANumero(j) {
+  // "5491127289595:12@s.whatsapp.net" -> "5491127289595" (saca el :dispositivo y el dominio)
+  // "@5491127289595" -> "5491127289595" (tag tipeado a mano)
+  return numeroLimpioSub(String(j || "").replace(/^@/, "").split("@")[0].split(":")[0])
+}
+
 function sesionSubRegistrada(dir) {
   try {
     return JSON.parse(fs.readFileSync(path.join(dir, "creds.json"), "utf8"))?.registered === true
@@ -905,11 +911,12 @@ function textoSubBots() {
 
 async function iniciarSubBot(numero, respuestaJid, respuestaSock, extra = {}) {
   const num = numeroLimpioSub(numero)
-  if (!/^\d{10,15}$/.test(num)) throw new Error("El numero no es valido (che familia mandalo con codigo de pais, ejemplo: 5491127289595)")
+  if (!/^\d{8,13}$/.test(num)) throw new Error("El numero no es valido (che familia mandalo con codigo de pais, ejemplo: 5491127289595)")
   if (SUBBOTS.get(num)?.conectado) throw new Error("Ese numero ya esta conectado como sub-bot. Mira la lista con #bots")
   if (SUBBOTS.size >= MAX_SUBBOTS && !SUBBOTS.has(num)) throw new Error(`Hay ${MAX_SUBBOTS} sub-bots conectados: es el maximo de este servidor`)
   const yaEsta = SUBBOTS.get(num)
   if (yaEsta) yaEsta.token = "cancelado" + Date.now() // invalida reintentos pendientes del socket viejo
+  PEDIDO_CODIGO.delete(num) // pedido manual nuevo = codigo fresco garantizado
   if (yaEsta?.sock) {
     try { yaEsta.sock.end() } catch {}
     yaEsta.sock = null
@@ -3063,9 +3070,14 @@ case "video":
             await reply(`${panel(`SUB-BOT`, `> No pude sacar el número real de esa mención 😕\n> Escribilo a mano con código de país\n> Ejemplo: #code 5491127289595`)}`)
             return
           }
-          let numeroDestino = mencionPN ? numeroLimpioSub(mencionPN.split("@")[0]) : ""
-          if (!numeroDestino) numeroDestino = numeroLimpioSub(args[0] || "")
-          if (!numeroDestino) numeroDestino = senderNumber
+          let numeroDestino = mencionPN ? jidANumero(mencionPN) : ""
+          if (!numeroDestino) numeroDestino = jidANumero(args[0])
+          if (!numeroDestino) numeroDestino = jidANumero(sender)
+          // Guardia anti-LID: los numeros internos de WhatsApp miden 15+ digitos y no son telefonos reales
+          if (numeroDestino.length > 13) {
+            await reply(`${panel(`SUB-BOT`, `> Ese me lo tomó como un número interno de WhatsApp 😕\n> Escribilo a mano con código de país, ejemplo:\n> #code 5491127289595`)}`)
+            return
+          }
           const numPrincipal = ((sock.user?.id || "").split(":")[0] || "").replace(/[^0-9]/g, "")
           if (numeroDestino === numPrincipal) {
             await reply(`${panel(`SUB-BOT`, `> Ese número ya es el bot principal ✅`)}`)
