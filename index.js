@@ -873,8 +873,86 @@ async function getGroupMeta(sock, from) {
   return meta
 }
 
-async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState(config.sessionName)
+const SUBBOTS = new Map()
+const MAX_SUBBOTS = 20
+const CARPETA_SUBBOTS = "subbots"
+let sockPrincipal = null
+
+function numeroLimpioSub(x) {
+  return String(x || "").replace(/[^0-9]/g, "")
+}
+
+function sesionSubRegistrada(dir) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(dir, "creds.json"), "utf8"))?.registered === true
+  } catch {
+    return false
+  }
+}
+
+function textoSubBots() {
+  if (!SUBBOTS.size) return "> No hay sub-bots conectados todavia\n> Usa #code (privado) para conectar uno"
+  const lineas = []
+  let i = 1
+  for (const [num, info] of SUBBOTS) {
+    const seg = Math.floor((Date.now() - (info.desde || Date.now())) / 1000)
+    const dur = seg > 3600 ? `${Math.floor(seg / 3600)}h ${Math.floor((seg % 3600) / 60)}m` : seg > 60 ? `${Math.floor(seg / 60)}m ${seg % 60}s` : `${seg}s`
+    lineas.push(`> ${i++}. +${num}\n> Estado: ${info.conectado ? "Conectado \u2705" : "Reconectando... \u23f3"}\n> Tiempo conectado: ${dur}`)
+  }
+  return lineas.join("\n")
+}
+
+async function iniciarSubBot(numero, respuestaJid, respuestaSock) {
+  const num = numeroLimpioSub(numero)
+  if (!/^\d{10,15}$/.test(num)) throw new Error("El numero no es valido (che familia mandalo con codigo de pais, ejemplo: 5491127289595)")
+  if (SUBBOTS.get(num)?.conectado) throw new Error("Ese numero ya esta conectado como sub-bot. Mira la lista con #bots")
+  if (SUBBOTS.size >= MAX_SUBBOTS && !SUBBOTS.has(num)) throw new Error(`Hay ${MAX_SUBBOTS} sub-bots conectados: es el maximo de este servidor`)
+  const yaEsta = SUBBOTS.get(num)
+  if (yaEsta) yaEsta.token = "cancelado" + Date.now() // invalida reintentos pendientes del socket viejo
+  if (yaEsta?.sock) {
+    try { yaEsta.sock.end() } catch {}
+    yaEsta.sock = null
+  }
+  await startBot({ esSub: true, numeroSub: num, respuestaJid, respuestaSock })
+  return num
+}
+
+async function detenerSubBot(numero, borrarSesion = false) {
+  const num = numeroLimpioSub(numero)
+  const info = SUBBOTS.get(num)
+  if (!info) throw new Error("Ese numero no tiene sub-bot activo. Mira la lista con #bots")
+  try { info.sock?.end() } catch {}
+  SUBBOTS.delete(num)
+  if (borrarSesion) fs.rmSync(path.join(CARPETA_SUBBOTS, num), { recursive: true, force: true })
+}
+
+function autoarranqueSubs() {
+  try {
+    const base = path.join(process.cwd(), CARPETA_SUBBOTS)
+    if (!fs.existsSync(base)) return
+    let n = 0
+    for (const dir of fs.readdirSync(base, { withFileTypes: true })) {
+      if (!dir.isDirectory()) continue
+      if (!sesionSubRegistrada(path.join(base, dir.name))) continue
+      if (!SUBBOTS.has(dir.name)) SUBBOTS.set(dir.name, { numero: dir.name, conectado: false, desde: Date.now(), intentos: 0 })
+      startBot({ esSub: true, numeroSub: dir.name }).catch((e) => console.log("[SUBBOT] autoarranque falla:", e?.message))
+      n++
+    }
+    if (n) console.log(`[SUBBOT] autoarranque: ${n} sub-bots re-conectando...`)
+  } catch (e) {
+    console.log("[SUBBOT] autoarranque error:", e?.message)
+  }
+}
+
+async function startBot(opts = {}) {
+  const esSub = Boolean(opts.esSub)
+  const numeroSub = opts.numeroSub || null
+  const sessionDir = esSub ? path.join(CARPETA_SUBBOTS, numeroSub || "sub") : config.sessionName
+  const tokenSub = opts.token || (opts.token = "t" + Date.now() + Math.random().toString(36).slice(2))
+  if (esSub && numeroSub && !SUBBOTS.has(numeroSub)) {
+    SUBBOTS.set(numeroSub, { numero: numeroSub, token: tokenSub, conectado: false, desde: Date.now(), intentos: 0 })
+  }
+  const { state, saveCreds } = await useMultiFileAuthState(sessionDir)
   const { version } = await fetchLatestBaileysVersion()
 
   const sock = makeWASocket({
@@ -883,7 +961,7 @@ async function startBot() {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" }))
     },
-    printQRInTerminal: true,
+    printQRInTerminal: !esSub,
     logger: pino({ level: "silent" }),
     browser: ["୲୳ EʀᴢᴀBᴏᴛ-MD/OFC", "Chrome", "1.0.0"]
   })
@@ -892,13 +970,73 @@ async function startBot() {
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update
+
+    // Sub-bot sin sesion registrada: pedir codigo de vinculacion (pairing code, sin QR)
+    if (esSub && numeroSub && !state.creds?.registered && update.qr && !opts.codigoPedido) {
+      opts.codigoPedido = true
+      setTimeout(async () => {
+        try {
+          const codigo = await sock.requestPairingCode(numeroSub)
+          const formateado = String(codigo || "").match(/.{1,4}/g)?.join("-") || String(codigo || "")
+          const destinoSock = opts.respuestaSock || sockPrincipal || sock
+          const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
+          if (destinoSock?.sendMessage) {
+            await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> Tu codigo es:\n\n> ${formateado}\n\n> Pasos en el otro celular:\n> 1. Abrir WhatsApp\n> 2. Configuracion > Dispositivos vinculados\n> 3. Vincular con el numero de telefono\n> 4. Escribir el codigo de arriba\n\n> El codigo dura poco \u23f3`) })
+          }
+          console.log(`[SUBBOT] codigo de vinculacion pedido para +${numeroSub}`)
+        } catch (e) {
+          console.log("[SUBBOT] error pidiendo codigo:", e?.message || e)
+        }
+      }, 3000)
+    }
+
     if (connection === "close") {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+      const statusCode = lastDisconnect?.error?.output?.statusCode
+      if (esSub) {
+        // Sesion desloggeada o nunca registrada: borrar carpeta y soltar (sin bucles)
+        if (statusCode === DisconnectReason.loggedOut || !sesionSubRegistrada(sessionDir)) {
+          try { fs.rmSync(sessionDir, { recursive: true, force: true }) } catch {}
+          SUBBOTS.delete(numeroSub)
+          console.log(`[SUBBOT] sesion eliminada para +${numeroSub} (sin registrar o desvinculada)`)
+          return
+        }
+        // Otro motivo: reconectar con backoff (5s, 10s, ... max 60s)
+        const previa = SUBBOTS.get(numeroSub) || {}
+        const intentos = (Number(previa.intentos) || 0) + 1
+        SUBBOTS.set(numeroSub, { ...previa, numero: numeroSub, token: tokenSub, conectado: false, sock: null, intentos })
+        const espera = Math.min(intentos * 5000, 60000)
+        console.log(`[SUBBOT] +${numeroSub} desconectado, reintentando en ${espera / 1000}s (intento ${intentos})`)
+        const tokenViejo = opts.token
+        setTimeout(() => {
+          const actual = SUBBOTS.get(numeroSub)
+          if (!actual || actual.token !== tokenViejo) return // hubo reinicio nuevo: no duplicar socket
+          startBot({ esSub: true, numeroSub, respuestaSock: opts.respuestaSock, respuestaJid: opts.respuestaJid }).catch((e) => console.log("[SUBBOT] reconexion falla:", e?.message || e))
+        }, espera)
+        return
+      }
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut
       if (shouldReconnect) {
         startBot()
       }
     } else if (connection === "open") {
-      console.log("EʀᴢᴀBᴏᴛ-MD/OFC conectado correctamente ⚡")
+      if (esSub) {
+        const previa = SUBBOTS.get(numeroSub) || {}
+        SUBBOTS.set(numeroSub, { ...previa, numero: numeroSub, token: tokenSub, sock, conectado: true, desde: Date.now(), intentos: 0 })
+        console.log(`[SUBBOT] +${numeroSub} conectado como sub-bot ✅`)
+        if (!previa.conectado) {
+          const destinoSock = opts.respuestaSock || sockPrincipal || sock
+          const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
+          if (destinoSock?.sendMessage) {
+            destinoSock.sendMessage(destinoJid, { text: panel(`SUB-BOT CONECTADO`, `> ✅ Fuiste vinculado como sub-bot
+> Ya podes usar TODOS los comandos desde este numero
+> (descargas, menu, juegos, todo)
+> Para ver la lista: #bots`) }).catch(() => {})
+          }
+        }
+      } else {
+        sockPrincipal = sock
+        console.log("EʀᴢᴀBᴏᴛ-MD/OFC conectado correctamente ⚡")
+      }
     }
   })
 
@@ -916,7 +1054,8 @@ async function startBot() {
     const ownerNumberClean = config.ownerNumber.split("@")[0].replace(/[^0-9]/g, "")
     const botIsOwnerAccount = botNumber !== "" && botNumber === ownerNumberClean
 
-    if (msg.key.fromMe && !botIsOwnerAccount) return
+    // En sub-bots: permitir responder a sus propios mensajes (el dueño del sub usa el bot en su propio chat)
+    if (msg.key.fromMe && !botIsOwnerAccount && !esSub) return
 
     const sender = msg.key.fromMe ? botJid : normalizeSenderJid(msg)
     if (!sender) return
@@ -2869,12 +3008,27 @@ case "video":
 
         case "qr":
         case "code":
+        case "jadibot":
+        case "serbot":
+        case "subbot": {
           if (isGroup) {
-            await reply("Este comando se usa por mensaje privado")
+            await reply(`${panel(`SUB-BOT`, `> El código se pide por mensaje privado\n> Escribime directo al chat privado del bot: #code`)}`)
             return
           }
-          await reply(`${panel(`SUB-BOT QR`, `> Función de sub-bot activa\n> Envía tu número o mención`)}`)
+          const numeroDestino = numeroLimpioSub(args[0] || "") || senderNumber
+          const numPrincipal = ((sock.user?.id || "").split(":")[0] || "").replace(/[^0-9]/g, "")
+          if (numeroDestino === numPrincipal) {
+            await reply(`${panel(`SUB-BOT`, `> Ese número ya es el bot principal ✅`)}`)
+            return
+          }
+          await reply(`${panel(`SUB-BOT`, `> 🔗 Conectando +${numeroDestino}...\n> En un momento te llega el código de vinculación`)}`)
+          try {
+            await iniciarSubBot(numeroDestino, from, sock)
+          } catch (e) {
+            await reply(`${panel(`SUB-BOT`, `> ❌ ${String(e?.message || "No se pudo conectar")}`)}`)
+          }
           break
+        }
 
         case "qrpremium":
         case "codepremium":
@@ -3081,8 +3235,42 @@ case "video":
 
         case "bots":
         case "sockets":
-          await reply(`${panel(`BOTS ACTIVOS`, `> 1. EʀᴢᴀBᴏᴛ-MD/OFC (Principal)\n> Estado: Activo`)}`)
+          await reply(`${panel(`BOTS ACTIVOS`, `> 1. EʀᴢᴀBᴏᴛ-MD/OFC (Principal) ✅\n${textoSubBots()}`)}`)
           break
+
+        case "stop": {
+          if (!isOwner && !SUBBOTS.has(senderNumber)) {
+            await reply("Solo el dueño o el numero conectado como sub-bot puede usar #stop")
+            return
+          }
+          const numStop = isOwner ? (numeroLimpioSub(args[0] || "") || senderNumber) : senderNumber
+          try {
+            await detenerSubBot(numStop, false)
+            await reply(`${panel(`SUB-BOT DETENIDO`, `> ⏹ +${numStop} fue desconectado\n> Su sesion queda guardada\n> Se reconecta solo cuando reinicies el bot`)}`)
+          } catch (e) {
+            await reply(String(e?.message || "No se pudo detener ese sub-bot"))
+          }
+          break
+        }
+
+        case "delsub": {
+          if (!isOwner) {
+            await reply("Solo el dueño del bot puede usar #delsub")
+            return
+          }
+          const numDel = numeroLimpioSub(args[0] || "")
+          if (!numDel) {
+            await reply("Uso: #delsub 5491127289595")
+            return
+          }
+          try {
+            await detenerSubBot(numDel, true)
+            await reply(`${panel(`SUB-BOT ELIMINADO`, `> 🗑 +${numDel} fue desconectado\n> Su sesion fue borrada por completo\n> Ese numero tiene que vincularse de nuevo con #code`)}`)
+          } catch (e) {
+            await reply(String(e?.message || "No se pudo eliminar ese sub-bot"))
+          }
+          break
+        }
 
         case "del":
         case "delete":
@@ -3743,3 +3931,4 @@ case "video":
 }
 
 startBot()
+autoarranqueSubs()
