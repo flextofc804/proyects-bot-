@@ -2387,7 +2387,7 @@ case "play":
             return
           }
           try {
-            await reply("Buscando y descargando audio...")
+            reaccionar(sock, from, msg, ["\u23f3"]).catch(() => {})
             let audioQuery = text
             if (/^\d+$/.test(text.trim()) && searchHistory.has(from)) {
               const picked = searchHistory.get(from)[Number(text.trim()) - 1]
@@ -2792,7 +2792,8 @@ case "video":
           }
           pinSearchCooldown.set(from, pinTs)
           const { zetaCorePin } = await import("./youtube.js")
-          await reply(`📌 Buscando en Pinterest: "${pinQuery}"...`)
+          const [sPin1, sPin2] = elegirSimbolos(2)
+          await reply(`${sPin1} \u0f3a ݁⋆ ۶ৎ ݁˖ . ݁ ᥫ᭡ ⋆࣪ ִֶָ ݁. ♱ \u0f3b\n\n${estilizarLetra("Descargando imagenes...")} \u27e1 ݁⋆\n\n${sPin2} \u300c ${pinQuery} \u300d \u02da \u0d18\u29cb\u22c6`)
           try {
             let imagenes = []
             try {
