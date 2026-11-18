@@ -190,7 +190,7 @@ if (MENU_IMAGE2) {
 }
 const NSFW_PATTERN = /\b(porn\w*|xxx|nsfw|hentai|onlyfans|redtube|xvideos|sexo|sexual|desnud[ao]s?|nudes?|naked|tetas|culo|culos|vagina|pene|anal|orgia|orgias|erotico|eroticas?|horny|gore|decapitacion|mutilacion|suicidio|violacion|violar|incesto|puta|putas|puto|putos|masturb\w*|18\+)\b/
 
-const PANEL_TOP = "╔" + "═".repeat(20) + "╗\n  ⚡ ZENITH - BOT ⚡\n╚" + "═".repeat(20) + "╝"
+const PANEL_TOP = "╭" + "─".repeat(26) + "╮\n  ⚡ EʀᴢᴀBᴏᴛ-MD/OFC ⚡\n╰" + "─".repeat(26) + "╯"
 const PANEL_FOOTER = "└" + "─".repeat(15) + "┘"
 
 function panelStart(title, body) {
@@ -216,7 +216,7 @@ const pinSearchCooldown = new Map()
 const searchHistory = new Map()
 
 const config = {
-  botName: "ZENITH - BOT",
+  botName: "EʀᴢᴀBᴏᴛ-MD/OFC",
   prefix: "#",
   owner: "Dueño",
   ownerNumber: "5491127289595@s.whatsapp.net",
@@ -567,7 +567,7 @@ async function sendMenuInteractive(sock, from, msg, menuText, opts = {}) {
               hasMediaAttachment: Boolean(media?.imageMessage)
             }),
             body: proto.Message.InteractiveMessage.Body.create({ text: menuText }),
-            footer: proto.Message.InteractiveMessage.Footer.create({ text: "ZENITH Bot" }),
+            footer: proto.Message.InteractiveMessage.Footer.create({ text: "EʀᴢᴀBᴏᴛ-MD/OFC" }),
             nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({ buttons })
           })
         }
@@ -745,7 +745,7 @@ async function startBot() {
     },
     printQRInTerminal: true,
     logger: pino({ level: "silent" }),
-    browser: ["ZENITH-BOT", "Chrome", "1.0.0"]
+    browser: ["EʀᴢᴀBᴏᴛ-MD/OFC", "Chrome", "1.0.0"]
   })
 
   sock.ev.on("creds.update", saveCreds)
@@ -758,7 +758,7 @@ async function startBot() {
         startBot()
       }
     } else if (connection === "open") {
-      console.log("ZENITH - BOT conectado correctamente")
+      console.log("EʀᴢᴀBᴏᴛ-MD/OFC conectado correctamente ⚡")
     }
   })
 
@@ -2005,7 +2005,7 @@ case "play":
             if (audioBuffer.length > 20 * 1024 * 1024) {
               await sock.sendMessage(
                 from,
-                { document: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", fileName: `zenith_audio${audioExt || ".m4a"}`, caption: "ZENITH - Audio largo enviado como documento" },
+                { document: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", fileName: `zenith_audio${audioExt || ".m4a"}`, caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Audio largo enviado como documento" },
                 { quoted: msg }
               )
             } else {
@@ -2057,7 +2057,7 @@ case "video":
     const sendVideoDocumento = () =>
       sock.sendMessage(
         from,
-        { document: { url: videoFile }, mimetype: "video/mp4", fileName: `zenith_video${videoExt || ".mp4"}`, caption: "ZENITH - Video pesado enviado como documento" },
+        { document: { url: videoFile }, mimetype: "video/mp4", fileName: `zenith_video${videoExt || ".mp4"}`, caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Video pesado enviado como documento" },
         { quoted: msg }
       )
     if (videoSize > 50 * 1024 * 1024) {
@@ -2066,7 +2066,7 @@ case "video":
       try {
         await sock.sendMessage(
           from,
-          { video: { url: videoFile }, mimetype: videoExt === ".webm" ? "video/webm" : "video/mp4", caption: "ZENITH - Video" },
+          { video: { url: videoFile }, mimetype: videoExt === ".webm" ? "video/webm" : "video/mp4", caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Video" },
           { quoted: msg }
         )
       } catch {
@@ -2164,7 +2164,7 @@ case "video":
               const ttBuffer = fs.readFileSync(ttApiFile)
               await sock.sendMessage(
                 from,
-                { video: ttBuffer, mimetype: "video/mp4", caption: "ZENITH - TikTok" },
+                { video: ttBuffer, mimetype: "video/mp4", caption: "EʀᴢᴀBᴏᴛ-MD/OFC - TikTok" },
                 { quoted: msg }
               )
               removeFile(ttApiFile)
@@ -2173,7 +2173,7 @@ case "video":
             const ttResult = await tiktokDownload(text)
             if (ttResult.type === "video") {
               const ttBuffer = fs.readFileSync(ttResult.file)
-              const ttCaption = ttResult.caption ? `ZENITH - TikTok\n${ttResult.caption.slice(0, 120)}` : "ZENITH - TikTok"
+              const ttCaption = ttResult.caption ? `EʀᴢᴀBᴏᴛ-MD/OFC - TikTok\n${ttResult.caption.slice(0, 120)}` : "EʀᴢᴀBᴏᴛ-MD/OFC - TikTok"
               await sock.sendMessage(
                 from,
                 { video: ttBuffer, mimetype: "video/mp4", caption: ttCaption },
@@ -2182,7 +2182,7 @@ case "video":
               removeFile(ttResult.file)
             } else {
               for (const ttImage of ttResult.files.slice(0, 5)) {
-                await sock.sendMessage(from, { image: fs.readFileSync(ttImage), caption: "ZENITH - TikTok" }, { quoted: msg })
+                await sock.sendMessage(from, { image: fs.readFileSync(ttImage), caption: "EʀᴢᴀBᴏᴛ-MD/OFC - TikTok" }, { quoted: msg })
                 removeFile(ttImage)
               }
             }
@@ -2262,7 +2262,7 @@ case "video":
               const igBuffer = fs.readFileSync(igApiFile)
               await sock.sendMessage(
                 from,
-                { video: igBuffer, mimetype: "video/mp4", caption: "ZENITH - Instagram" },
+                { video: igBuffer, mimetype: "video/mp4", caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" },
                 { quoted: msg }
               )
               removeFile(igApiFile)
@@ -2273,13 +2273,13 @@ case "video":
               const igBuffer = fs.readFileSync(igResult.file)
               await sock.sendMessage(
                 from,
-                { video: igBuffer, mimetype: "video/mp4", caption: "ZENITH - Instagram" },
+                { video: igBuffer, mimetype: "video/mp4", caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" },
                 { quoted: msg }
               )
               removeFile(igResult.file)
             } else {
               for (const igImage of igResult.files.slice(0, 5)) {
-                await sock.sendMessage(from, { image: fs.readFileSync(igImage), caption: "ZENITH - Instagram" }, { quoted: msg })
+                await sock.sendMessage(from, { image: fs.readFileSync(igImage), caption: "EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" }, { quoted: msg })
                 removeFile(igImage)
               }
             }
@@ -3499,7 +3499,7 @@ case "video":
       try {
         await handleIncoming(incoming)
       } catch (error) {
-        console.error("[ZENITH] Error procesando mensaje entrante:", error)
+        console.error("[ERZABOT] Error procesando mensaje entrante:", error)
       }
     }
   })
