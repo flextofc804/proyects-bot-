@@ -173,6 +173,21 @@ if (MENU_IMAGE) {
   console.log("[MENU] sin imagen: subí menu.jpg a la carpeta del bot para que el menú salga con imagen")
 }
 
+const MENU_VIDEO = [
+  "menu.mp4",
+  "menu_video.mp4"
+]
+  .flatMap((name) => [
+    path.join(process.cwd(), name),
+    path.join(path.dirname(fileURLToPath(import.meta.url)), name),
+    path.join("/home/container", name)
+  ])
+  .find((p) => fs.existsSync(p)) || ""
+
+if (MENU_VIDEO) {
+  console.log(`[MENU] video del menú con música encontrado: ${MENU_VIDEO}`)
+}
+
 const MENU_IMAGE2 = [
   "menu2.png",
   "menu2.jpg",
@@ -596,7 +611,9 @@ async function enviarMenuPrincipal(sock, from, msg) {
   const text = renderMenuHome()
   startTyping(sock, from).catch(() => {})
   try {
-    if (MENU_IMAGE) {
+    if (MENU_VIDEO) {
+      await sock.sendMessage(from, { video: { url: MENU_VIDEO }, caption: text, mimetype: "video/mp4" }, { quoted: msg })
+    } else if (MENU_IMAGE) {
       await sock.sendMessage(from, { image: { url: MENU_IMAGE }, caption: text }, { quoted: msg })
     } else {
       await sock.sendMessage(from, { text }, { quoted: msg })
