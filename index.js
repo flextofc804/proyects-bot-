@@ -2481,16 +2481,16 @@ case "play":
               if (picked) audioQuery = `https://www.youtube.com/watch?v=${picked.id}`
             }
             const { resolveVideo, mediaFile, zetaCoreMeta } = await import("./youtube.js")
-            const audioVideoId = await resolveVideo(audioQuery)
+            const audioVideoId = (await resolveVideo(audioQuery)) || String(audioQuery).trim()
             if (!audioVideoId) {
               await reply("No se encontró el video")
               return
             }
             try {
-              const audioMeta = await zetaCoreMeta(audioVideoId, "audio")
+              const audioMeta = await zetaCoreMeta(audioQuery, "audio")
               if (audioMeta?.videoId) await enviarPortada(sock, from, msg, audioMeta, "audio")
             } catch {}
-            const audioFile = await mediaFile(audioVideoId, "audio")
+            const audioFile = await mediaFile(audioQuery, "audio")
             const audioBuffer = fs.readFileSync(audioFile)
             const audioExt = String(path.extname(audioFile) || "").toLowerCase()
             const isVoice = command === "ytaudio" || command === "playaudio"
@@ -2545,16 +2545,16 @@ case "video":
       if (picked) videoQuery = `https://www.youtube.com/watch?v=${picked.id}`
     }
     const { resolveVideo, mediaFile, zetaCoreMeta } = await import("./youtube.js")
-    const videoVideoId = await resolveVideo(videoQuery)
+    const videoVideoId = (await resolveVideo(videoQuery)) || String(videoQuery).trim()
     if (!videoVideoId) {
       await reply("No se encontró el video")
       return
     }
     try {
-      const videoMeta = await zetaCoreMeta(videoVideoId, "video")
+      const videoMeta = await zetaCoreMeta(videoQuery, "video")
       if (videoMeta?.videoId) await enviarPortada(sock, from, msg, videoMeta, "video")
     } catch {}
-    const videoFile = await mediaFile(videoVideoId, "video")
+    const videoFile = await mediaFile(videoQuery, "video")
     const videoExt = String(path.extname(videoFile) || "").toLowerCase()
     const videoSize = fs.statSync(videoFile).size
     const sendVideoDocumento = () =>
