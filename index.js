@@ -875,6 +875,33 @@ async function getGroupMeta(sock, from) {
 }
 
 const SUBBOTS = new Map()
+// Bloques anti-bucle
+// IDS_PROPIOS: ids de los mensajes que el propio bot envio (cualquier socket).
+// Si el eco de un mensaje propio vuelve por messages.upsert, se descarta antes de parsearlo.
+const IDS_PROPIOS = new Map()
+let ultimaLimpiezaIds = 0
+function marcarIdPropio(id) {
+  if (!id) return
+  const ahora = Date.now()
+  if (ahora - ultimaLimpiezaIds > 600000) {
+    ultimaLimpiezaIds = ahora
+    const corte = ahora - 1800000
+    for (const [k, v] of IDS_PROPIOS) if (v < corte) IDS_PROPIOS.delete(k)
+  }
+  IDS_PROPIOS.set(String(id), ahora)
+}
+
+// COMANDOS_VALIDOS: whitelista extraida de los case del handler (solo para modo self).
+// Un mensaje del propio bot cuyo texto arranca con prefix pero no es un comando real, se descarta.
+const COMANDOS_VALIDOS = (() => {
+  const setCmd = new Set()
+  try {
+    const fuente = fs.readFileSync(fileURLToPath(import.meta.url), "utf8")
+    for (const m of fuente.matchAll(/case "([a-zA-Z0-9_.-]+)":/g)) setCmd.add(m[1].toLowerCase())
+  } catch {}
+  return setCmd
+})()
+
 const MAX_SUBBOTS = 20
 const CARPETA_SUBBOTS = "subbots"
 let sockPrincipal = null
@@ -988,6 +1015,14 @@ async function startBot(opts = {}) {
     logger: pino({ level: "silent" }),
     browser: esSub ? Browsers.ubuntu("Chrome") : ["୲୳ EʀᴢᴀBᴏᴛ-MD/OFC", "Chrome", "1.0.0"]
   })
+
+  // envoltorio: registrar el id de cada mensaje enviado por ESTE socket
+  const sendMessageBase = sock.sendMessage.bind(sock)
+  sock.sendMessage = async (jid, content, extra) => {
+    const res = await sendMessageBase(jid, content, extra)
+    try { marcarIdPropio(res?.key?.id) } catch {}
+    return res
+  }
 
   sock.ev.on("creds.update", saveCreds)
 
@@ -1171,10 +1206,29 @@ async function startBot(opts = {}) {
     }
   })
 
+  // dedup por id de mensaje redelivery igual (por socket)
+  const VISTOS = new Map()
+  let ultimaLimpiezaVistos = 0
+
   async function handleIncoming(incoming) {
     const normalizedMessage = unwrapMessageContent(incoming?.message)
     const msg = { ...incoming, message: normalizedMessage }
     if (!msg.message) return
+
+    const idMensaje = msg.key?.id
+    if (idMensaje) {
+      const ahoraVisto = Date.now()
+      if (ahoraVisto - ultimaLimpiezaVistos > 600000) {
+        ultimaLimpiezaVistos = ahoraVisto
+        const corteVistos = ahoraVisto - 1800000
+        for (const [k, v] of VISTOS) if (v < corteVistos) VISTOS.delete(k)
+      }
+      if (VISTOS.has(String(idMensaje))) return
+      VISTOS.set(String(idMensaje), ahoraVisto)
+    }
+    if (msg.key.fromMe && IDS_PROPIOS.has(String(msg.key.id))) return
+
+    if (esSub && numeroSub && SUBBOTS.get(numeroSub)?.sock && SUBBOTS.get(numeroSub).sock !== sock) return
 
     const from = msg.key?.remoteJid
     if (!from || from === "status@broadcast" || from.endsWith("@newsletter")) return
@@ -1217,6 +1271,8 @@ async function startBot(opts = {}) {
     const args = body.slice(prefixUsado.length).trim().split(/ +/)
     const command = args.shift().toLowerCase()
     const text = args.join(" ")
+
+    if (msg.key.fromMe && !COMANDOS_VALIDOS.has(command)) return
 
     if (REACCIONES[command]) reaccionar(sock, from, msg, REACCIONES[command]).catch(() => {})
 
@@ -4096,7 +4152,9 @@ case "video":
     }
   })
 
-  sock.ev.on("messages.upsert", async ({ messages }) => {
+  sock.ev.on("messages.upsert", async (event) => {
+    if (event?.type !== "notify") return
+    const { messages } = event
     const msg = messages[0]
     if (!msg || !msg.message) return
     if (msg.key.fromMe) return
