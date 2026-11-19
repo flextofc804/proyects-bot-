@@ -1061,7 +1061,13 @@ async function startBot(opts = {}) {
           return
         }
         const motivoMortal = statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.forbidden
-        const registrada = sesionSubRegistrada(sessionDir)
+        let registrada = sesionSubRegistrada(sessionDir)
+        if (!registrada && !motivoMortal) {
+          // Carrera del 515 (restartRequired): WhatsApp linkea el equipo y cierra el socket ANTES de que
+          // saveCreds termine de escribir creds.json -> releer la carpeta antes de dar la sesion por muerta
+          await new Promise((r) => setTimeout(r, 500))
+          registrada = sesionSubRegistrada(sessionDir)
+        }
         if (motivoMortal) {
           // Desvinculado desde el celular: borrar sesion y soltar (sin bucles)
           try { fs.rmSync(sessionDir, { recursive: true, force: true }) } catch {}
