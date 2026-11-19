@@ -1185,8 +1185,8 @@ async function startBot(opts = {}) {
     const ownerNumberClean = config.ownerNumber.split("@")[0].replace(/[^0-9]/g, "")
     const botIsOwnerAccount = botNumber !== "" && botNumber === ownerNumberClean
 
-    // En sub-bots: permitir responder a sus propios mensajes (el dueño del sub usa el bot en su propio chat)
-    if (msg.key.fromMe && !botIsOwnerAccount && !esSub) return
+    // Modo self: el bot oficial y los sub-bots responden a los comandos de su propio numero conectado
+    // Sin bucles: las respuestas propias no arrancan con prefix, y aca abajo el filtro de prefix corta cualquier eco del bot
 
     const sender = msg.key.fromMe ? botJid : normalizeSenderJid(msg)
     if (!sender) return

@@ -1059,7 +1059,9 @@ async function zetaCoreDl(query, kind, prefix, quality) {
 }
 
 async function zetaCoreYt(query, kind, prefix) {
+  const config = zetaCoreConfig()
   const params = new URLSearchParams({ query })
+  if (config.dlKey) params.set("key", config.dlKey)
   if (kind !== "audio") params.set("quality", "720p")
   const data = await zetaCoreJson(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
   const duracion = Number(data?.duracion_segundos) || 0
@@ -1070,8 +1072,13 @@ async function zetaCoreYt(query, kind, prefix) {
   } catch (dlError) {
     const dlMsg = String(dlError?.message || dlError)
     log(`ZETA-CORE /dl falló (${dlMsg.slice(0, 80)}); probando enlace directo...`)
+    const directo = String(data.descarga_directa || data.link || "")
+    if (directo.includes("/dl?") && !config.dlKey && !/[?&]key=[^&\s]/.test(directo)) {
+      // la API devuelve el /dl con key vacia: sin la clave guardada en zeta-core.txt no hay forma de descargar
+      throw new Error("falta la clave /dl en la línea 3 de zeta-core.txt")
+    }
     try {
-      return await zetaCoreSaveFile(data.descarga_directa || data.link, prefix, kind)
+      return await zetaCoreSaveFile(directo, prefix, kind)
     } catch (directError) {
       if (dlMsg.includes("falta la clave")) throw dlError
       throw directError
