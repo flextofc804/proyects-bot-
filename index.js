@@ -2,6 +2,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  Browsers,
   makeCacheableSignalKeyStore,
   downloadMediaMessage,
   getContentType
@@ -888,6 +889,15 @@ function numeroLimpioSub(x) {
   return String(x || "").replace(/[^0-9]/g, "")
 }
 
+function numeroPairingSub(x) {
+  // formato que exige WhatsApp para pairing code: solo digitos, y para Argentina (54)
+  // sin el "9" despues del prefijo (54 + area + numero), sin 0 intermedio ni + / espacios / guiones
+  let num = numeroLimpioSub(x).replace(/^0+/, "")
+  if (/^549\d+$/.test(num)) num = "54" + num.slice(3)
+  else if (/^540\d+$/.test(num)) num = "54" + num.slice(3)
+  return num
+}
+
 function jidANumero(j) {
   // "5491127289595:12@s.whatsapp.net" -> "5491127289595" (saca el :dispositivo y el dominio)
   // "@5491127289595" -> "5491127289595" (tag tipeado a mano)
@@ -976,7 +986,7 @@ async function startBot(opts = {}) {
     },
     printQRInTerminal: !esSub,
     logger: pino({ level: "silent" }),
-    browser: ["୲୳ EʀᴢᴀBᴏᴛ-MD/OFC", "Chrome", "1.0.0"]
+    browser: esSub ? Browsers.ubuntu("Chrome") : ["୲୳ EʀᴢᴀBᴏᴛ-MD/OFC", "Chrome", "1.0.0"]
   })
 
   sock.ev.on("creds.update", saveCreds)
@@ -994,7 +1004,7 @@ async function startBot(opts = {}) {
         setTimeout(async () => {
           try {
             if (tokenPedido !== tokenSub) return // el socket ya no es el vigente: no pedir codigo muerto
-            const codigo = await sock.requestPairingCode(numeroSub)
+            const codigo = await sock.requestPairingCode(numeroPairingSub(numeroSub))
             const formateado = formatearCodigoVinculacion(codigo)
             const pedidoActual = PEDIGO_CODIGO.get(numeroSub) || {}
             PEDIGO_CODIGO.set(numeroSub, { ...pedidoActual, vence: pedidoActual.vence || (Date.now() + VENTANA_CODIGO_MS), token: tokenSub, codigo: formateado })
@@ -1037,7 +1047,7 @@ async function startBot(opts = {}) {
             if (pedidoQrFall?.codigo && pedidoQrFall.vence >= Date.now()) {
               await destinoSock.sendMessage(destinoJid, { text: pedidoQrFall.codigo })
             } else {
-              const codigo = await sock.requestPairingCode(numeroSub)
+              const codigo = await sock.requestPairingCode(numeroPairingSub(numeroSub))
               const formateado = formatearCodigoVinculacion(codigo)
               PEDIGO_CODIGO.set(numeroSub, { ...(PEDIGO_CODIGO.get(numeroSub) || {}), vence: Date.now() + VENTANA_CODIGO_MS, token: tokenSub, codigo: formateado })
               await destinoSock.sendMessage(destinoJid, { text: panel(`CODIGO DE VINCULACION`, `> @${numeroSub} te mando tu codigo en el mensaje siguiente \ud83d\udd22\n> 1. Abrir WhatsApp\n> 2. Configuraci\u00f3n > Dispositivos vinculados\n> 3. Vincular con el n\u00famero de tel\u00e9fono\n> 4. Escribir el c\u00f3digo del mensaje siguiente`), mentions: [`${numeroSub}@s.whatsapp.net`] })
