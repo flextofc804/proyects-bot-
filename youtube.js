@@ -938,6 +938,11 @@ async function customApiDownload(videoId, kind, prefix) {
   return customApiDownloadUrl(`https://www.youtube.com/watch?v=${videoId}`, kind, prefix)
 }
 
+function esErrorReintentable(msg) {
+  const texto = String(msg || "")
+  return texto.includes("IP_BLOQUEADA") || /restriccion de edad|inicio de sesion|anti-bot/i.test(texto)
+}
+
 async function zetaCoreDlRetry(query, kind, prefix, quality) {
   let lastError = null
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -949,7 +954,7 @@ async function zetaCoreDlRetry(query, kind, prefix, quality) {
       if (msg.includes("falta la clave")) throw e
       // IP_BLOQUEADA: la API ahora falla rapido (<10s) y pide reintentar
       // porque Vercel rota la IP de salida en cada pedido nuevo.
-      if (msg.includes("IP_BLOQUEADA")) {
+      if (esErrorReintentable(msg)) {
         if (attempt < 3) await sleepMs(attempt === 1 ? 2000 : 4000)
         continue
       }
@@ -1063,7 +1068,7 @@ async function zetaCoreYt(query, kind, prefix) {
   const params = new URLSearchParams({ query })
   if (config.dlKey) params.set("key", config.dlKey)
   if (kind !== "audio") params.set("quality", "720p")
-  const data = await zetaCoreJson(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
+  const data = await zetaCoreJsonReintentado(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
   const duracion = Number(data?.duracion_segundos) || 0
   const dlQuality =
     kind === "video" ? (duracion > 1200 ? "360p" : duracion > 600 ? "480p" : "720p") : null
@@ -1086,10 +1091,27 @@ async function zetaCoreYt(query, kind, prefix) {
   }
 }
 
+async function zetaCoreJsonReintentado(route, params) {
+  let data = null
+  let metaError = null
+  for (let intentoMeta = 1; intentoMeta <= 3; intentoMeta++) {
+    try {
+      data = await zetaCoreJson(route, params)
+      break
+    } catch (e) {
+      metaError = e
+      if (!esErrorReintentable(e?.message || e)) throw e
+      if (intentoMeta < 3) await sleepMs(intentoMeta === 1 ? 2000 : 4000)
+    }
+  }
+  if (!data) throw metaError
+  return data
+}
+
 async function zetaCoreMeta(query, kind) {
   const params = new URLSearchParams({ query: String(query) })
   if (kind !== "audio") params.set("quality", "720p")
-  const data = await zetaCoreJson(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
+  const data = await zetaCoreJsonReintentado(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
   return {
     titulo: data?.titulo || data?.title || "",
     canal: data?.canal || data?.autor || data?.channel || "",

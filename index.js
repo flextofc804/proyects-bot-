@@ -2518,6 +2518,8 @@ case "play":
               await reply("⚠️ Falta la clave de descarga en el servidor.\n\nEn el archivo zeta-core.txt de la carpeta del bot tiene que estar la clave en la línea 3.")
             } else if (reason.includes("IP_BLOQUEADA")) {
               await reply("⚠️ El servidor de descargas tiene la IP temporal bloqueada por YouTube.\n\nProbá de nuevo en 1-2 minutos.")
+            } else if (/restriccion de edad|inicio de sesion|anti-bot/i.test(reason)) {
+              await reply("⚠️ Ese video tiene restriccón de edad o verificación anti-bot de YouTube.\n\nIntenté varias veces. Probá con otro video o de nuevo en unos minutos.")
             } else if (reason.includes("aborted due to timeout")) {
               await reply("⏳ La API tardó demasiado en procesar el video (60 segundos).\n\nProbá de nuevo en unos minutos.")
             } else {
@@ -2585,6 +2587,8 @@ case "video":
       await reply("⚠️ Falta la clave de descarga en el servidor.\n\nEn el archivo zeta-core.txt de la carpeta del bot tiene que estar la clave en la línea 3.")
     } else if (reason.includes("IP_BLOQUEADA")) {
       await reply("⚠️ El servidor de descargas tiene la IP temporal bloqueada por YouTube.\n\nProbá de nuevo en 1-2 minutos.")
+    } else if (/restriccion de edad|inicio de sesion|anti-bot/i.test(reason)) {
+      await reply("⚠️ Ese video tiene restricción de edad o verificación anti-bot de YouTube.\n\nIntenté varias veces. Probá con otro video o de nuevo en unos minutos.")
     } else if (reason.includes("aborted due to timeout")) {
       await reply("⏳ La API tardó demasiado en procesar el video (60 segundos).\n\nProbá de nuevo en unos minutos.")
     } else {
