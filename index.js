@@ -3143,10 +3143,6 @@ case "video":
         case "jadibot":
         case "serbot":
         case "subbot": {
-          if (isGroup) {
-            await reply(`${panel(`SUB-BOT`, `> El código se pide por mensaje privado\n> Escribime directo al chat privado del bot: .code`)}`)
-            return
-          }
           // Resolver @mención: usar el JID real (@s.whatsapp.net), NO el LID interno (ese no es un número de teléfono)
           const mencionados = ((msg.message?.extendedTextMessage?.contextInfo?.mentionedJid)
             || (msg.message?.imageMessage?.contextInfo?.mentionedJid)
@@ -3157,12 +3153,48 @@ case "video":
             await reply(`${panel(`SUB-BOT`, `> No pude sacar el número real de esa mención 😕\n> Escribilo a mano con código de país\n> Ejemplo: .code 5491127289595`)}`)
             return
           }
+          // Detección automática: resolver el JID real del remitente aunque el mensaje llegue como LID interno
+          const resolverJidReal = async () => {
+            const jidBase = jidCore(sender)
+            const directo = [msg.key?.participantAlt, msg.key?.participantPn, msg.key?.remoteJidAlt,
+              msg.message?.extendedTextMessage?.contextInfo?.participantPn,
+              msg.message?.extendedTextMessage?.contextInfo?.participantAlt]
+              .find((j) => typeof j === "string" && j.endsWith("@s.whatsapp.net"))
+            if (directo) return directo
+            if (isGroup) {
+              try {
+                const meta = await getGroupMeta(sock, from)
+                const lidNum = jidBase.split("@")[0]
+                const parti = (meta?.participants || []).find((p) => jidVariantSet([p.id, p.phoneNumber, p.pn]).has(jidBase) || String(p.id || "").split("@")[0] === lidNum)
+                const pn = parti?.phoneNumber || parti?.pn || ""
+                if (typeof pn === "string" && pn) return pn.includes("@") ? pn : `${pn.split(":")[0].replace(/[^0-9]/g, "")}@s.whatsapp.net`
+              } catch {}
+            }
+            try {
+              const contacto = sock.store?.contacts?.[sender] || sock.store?.contacts?.[jidBase]
+              const jidContacto = typeof contacto === "string" ? contacto : contacto?.jid
+              if (typeof jidContacto === "string" && jidContacto.endsWith("@s.whatsapp.net")) return jidContacto
+            } catch {}
+            try {
+              const res = await sock.onWhatsApp(sender)
+              const hit = Array.isArray(res) ? res.find((rt) => rt?.exists && String(rt.jid).endsWith("@s.whatsapp.net")) : null
+              if (hit && jidANumero(hit.jid).length <= 13) return hit.jid
+            } catch {}
+            return ""
+          }
+          let numeroRemitente = sender.endsWith("@s.whatsapp.net") && senderNumber.length <= 13 ? senderNumber : ""
+          if (!numeroRemitente) numeroRemitente = jidANumero(await resolverJidReal())
+          if (numeroRemitente.length > 13 || !numeroRemitente) numeroRemitente = ""
           let numeroDestino = mencionPN ? jidANumero(mencionPN) : ""
           if (!numeroDestino) numeroDestino = jidANumero(args[0])
-          if (!numeroDestino) numeroDestino = jidANumero(sender)
+          if (!numeroDestino) numeroDestino = numeroRemitente || jidANumero(sender)
           // Guardia anti-LID: los numeros internos de WhatsApp miden 15+ digitos y no son telefonos reales
           if (numeroDestino.length > 13) {
             await reply(`${panel(`SUB-BOT`, `> Ese me lo tomó como un número interno de WhatsApp 😕\n> Escribilo a mano con código de país, ejemplo:\n> .code 5491127289595`)}`)
+            return
+          }
+          if (!numeroDestino) {
+            await reply(`${panel(`SUB-BOT`, `> No pude detectar tu número 😕\n> Escribilo a mano con código de país, ejemplo:\n> .code 5491127289595`)}`)
             return
           }
           const numPrincipal = ((sock.user?.id || "").split(":")[0] || "").replace(/[^0-9]/g, "")
@@ -3172,9 +3204,12 @@ case "video":
           }
           const modoQr = command === "qr"
           const jidDestino = `${numeroDestino}@s.whatsapp.net`
-          await sock.sendMessage(from, { text: `${panel(`SUB-BOT`, `> 🔗 Conectando @${numeroDestino}...\n> En un momento te llega el ${modoQr ? "QR para escanear 📲" : "código de vinculación 🔢"}`)}`, mentions: [jidDestino] })
+          // En grupos el comando se acepta igual: el panel y el código van al privado del que lo pidió
+          let jidRespuesta = from
+          if (isGroup) jidRespuesta = numeroRemitente ? `${numeroRemitente}@s.whatsapp.net` : jidCore(sender)
+          await sock.sendMessage(jidRespuesta, { text: `${panel(`SUB-BOT`, `> 🔗 Conectando @${numeroDestino}...\n> En un momento te llega el ${modoQr ? "QR para escanear 📲" : "código de vinculación 🔢"}`)}`, mentions: [jidDestino] })
           try {
-            await iniciarSubBot(numeroDestino, from, sock, { modoQr })
+            await iniciarSubBot(numeroDestino, jidRespuesta, sock, { modoQr })
           } catch (e) {
             await reply(`${panel(`SUB-BOT`, `> ❌ ${String(e?.message || "No se pudo conectar")}`)}`)
           }
