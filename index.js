@@ -39,7 +39,13 @@ async function loadFfmpeg() {
   if (ffmpegLib !== undefined) return ffmpegLib
   try {
     const mod = await import("fluent-ffmpeg")
-    ffmpegLib = mod.default || mod
+    const lib = mod.default || mod
+    try {
+      if (ffmpeg && fs.existsSync(ffmpeg)) {
+        lib.setFfmpegPath(ffmpeg)
+      }
+    } catch {}
+    ffmpegLib = lib
   } catch (e) {
     ffmpegLib = null
   }
@@ -240,12 +246,14 @@ async function enviarPortada(sock, from, msg, meta, tipo) {
   try {
     const vid = String(meta.videoId || "")
     if (!/^[-_a-zA-Z0-9]{6,20}$/.test(vid)) return
-    const candidatos = [`https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${vid}/hq720.jpg`, `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`, `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`]
+    const candidatos = []
+    if (meta?.miniatura && /^https?:\/\//.test(String(meta.miniatura))) candidatos.push(String(meta.miniatura))
+    candidatos.push(`https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`, `https://i.ytimg.com/vi/${vid}/hq720.jpg`, `https://i.ytimg.com/vi/${vid}/mqdefault.jpg`, `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`)
     let thumbBuf = null
     for (const url of candidatos) {
       try {
-        const r = await axios.get(url, { responseType: "arraybuffer", timeout: 10000, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } })
-        const b = Buffer.from(r.data)
+        const r = await fetch(url, { signal: AbortSignal.timeout(10000), headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" } })
+        const b = Buffer.from(await r.arrayBuffer())
         if (r.status === 200 && b.length > 5000) { thumbBuf = b; break }
       } catch {}
     }
@@ -253,6 +261,7 @@ async function enviarPortada(sock, from, msg, meta, tipo) {
     const inFile = tempFile("jpg")
     const outFile = tempFile("jpg")
     fs.writeFileSync(inFile, thumbBuf)
+    let salida = inFile
     try {
       const ffmpeg = await loadFfmpeg()
       const filter = "crop='min(iw,ih*16/9)':'min(iw*9/16,ih)',scale=720:720:force_original_aspect_ratio=increase,crop=720:720"
@@ -264,10 +273,16 @@ async function enviarPortada(sock, from, msg, meta, tipo) {
             .on("end", resolve)
             .on("error", reject)
         })
+        salida = outFile
       } else {
         await execAsync(`ffmpeg -y -i "${inFile}" -vf "${filter}" -q:v 2 -frames:v 1 -an "${outFile}"`)
+        salida = outFile
       }
-      await sock.sendMessage(from, { image: { url: outFile }, caption: decorarPortada(meta, tipo) }, { quoted: msg })
+    } catch {
+      salida = inFile
+    }
+    try {
+      await sock.sendMessage(from, { image: { url: salida }, caption: decorarPortada(meta, tipo) }, { quoted: msg })
     } finally {
       removeFile(inFile)
       removeFile(outFile)
@@ -2496,11 +2511,15 @@ case "play":
             removeFile(audioFile)
           } catch (e) {
             const reason = String(e?.message || e)
-            console.log("Error en play:", reason)
-            if (reason.includes("Vercel bloqueó")) {
+            console.error("Error en play:", reason, e?.stack || "")
+            if (reason.includes("Vercel bloqueó") || reason.includes("respondió HTML") || /HTTP 40[13]/.test(reason)) {
               await reply("⚠️ Tu API de Vercel le está bloqueando el paso al bot.\n\nArreglalo en Vercel: Settings → Deployment Protection → poner Disabled → Save → Redeploy.")
-            } else if (reason.includes("falta la clave")) {
+            } else if (reason.includes("falta la clave") || reason.toLowerCase().includes("clave invalida")) {
               await reply("⚠️ Falta la clave de descarga en el servidor.\n\nEn el archivo zeta-core.txt de la carpeta del bot tiene que estar la clave en la línea 3.")
+            } else if (reason.includes("IP_BLOQUEADA")) {
+              await reply("⚠️ El servidor de descargas tiene la IP temporal bloqueada por YouTube.\n\nProbá de nuevo en 1-2 minutos.")
+            } else if (reason.includes("aborted due to timeout")) {
+              await reply("⏳ La API tardó demasiado en procesar el video (60 segundos).\n\nProbá de nuevo en unos minutos.")
             } else {
               await reply("Error al descargar el audio, intentá con otro video en unos minutos.")
             }
@@ -2559,11 +2578,15 @@ case "video":
     removeFile(videoFile)
   } catch (e) {
     const reason = String(e?.message || e)
-    console.log("Error en mp4:", reason)
-    if (reason.includes("Vercel bloqueó")) {
+    console.error("Error en mp4:", reason, e?.stack || "")
+    if (reason.includes("Vercel bloqueó") || reason.includes("respondió HTML") || /HTTP 40[13]/.test(reason)) {
       await reply("⚠️ Tu API de Vercel le está bloqueando el paso al bot.\n\nArreglalo en Vercel: Settings → Deployment Protection → poner Disabled → Save → Redeploy.")
-    } else if (reason.includes("falta la clave")) {
+    } else if (reason.includes("falta la clave") || reason.toLowerCase().includes("clave invalida")) {
       await reply("⚠️ Falta la clave de descarga en el servidor.\n\nEn el archivo zeta-core.txt de la carpeta del bot tiene que estar la clave en la línea 3.")
+    } else if (reason.includes("IP_BLOQUEADA")) {
+      await reply("⚠️ El servidor de descargas tiene la IP temporal bloqueada por YouTube.\n\nProbá de nuevo en 1-2 minutos.")
+    } else if (reason.includes("aborted due to timeout")) {
+      await reply("⏳ La API tardó demasiado en procesar el video (60 segundos).\n\nProbá de nuevo en unos minutos.")
     } else {
       await reply("Error al descargar el video, intentá con otro en unos minutos.")
     }

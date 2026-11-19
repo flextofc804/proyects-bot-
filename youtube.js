@@ -993,7 +993,7 @@ function zetaCoreBase() {
   return zetaCoreConfig().base
 }
 
-async function zetaCoreJson(route, params, timeoutMs = 45000) {
+async function zetaCoreJson(route, params, timeoutMs = 60000) {
   const config = zetaCoreConfig()
   const url = `${config.base}${route}?${params.toString()}`
   const headers = { "User-Agent": "zenith-bot/1.0", Accept: "application/json" }
@@ -1095,7 +1095,8 @@ async function zetaCoreMeta(query, kind) {
     canal: data?.canal || data?.autor || data?.channel || "",
     visitas: data?.visitas ?? data?.views ?? null,
     duracion: Number(data?.duracion_segundos) || 0,
-    videoId: data?.videoId || query
+    videoId: data?.videoId || query,
+    miniatura: data?.miniatura || data?.thumbnail || ""
   }
 }
 
@@ -1381,6 +1382,11 @@ async function resolveVideo(input) {
 
   const scraped = await searchVideoId(raw)
   if (scraped) return scraped
+
+  const coreBusqueda = await zetaCoreJson("/ytsearch", new URLSearchParams({ query: raw, limit: "1" })).catch(() => null)
+  const coreUrl = String(coreBusqueda?.resultados?.[0]?.url || "")
+  const coreId = coreUrl ? extractVideoId(coreUrl) : null
+  if (coreId) return coreId
 
   const binary = await ensureYtDlp()
   if (binary) {
