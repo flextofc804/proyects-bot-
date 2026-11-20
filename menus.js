@@ -1,3 +1,5 @@
+import "./log-limpio.js"
+
 const menuOrder = ["economia", "stickers", "gacha", "descargas", "perfil", "subbots", "utilidades", "admin", "reacciones", "uno", "anime"]
 
 const menuAliases = {
