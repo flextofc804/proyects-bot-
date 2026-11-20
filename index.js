@@ -2528,7 +2528,7 @@ case "play":
               return
             }
             if (audioMeta.videoId) await enviarPortada(sock, from, msg, audioMeta, "audio")
-            const audioBuffer = await zetaCorePlayDl(audioMeta.videoId || audioMeta.link || audioQuery, "audio")
+            const audioBuffer = await zetaCorePlayDl(audioMeta, "audio")
             const isVoice = command === "ytaudio" || command === "playaudio"
             if (audioBuffer.length > 20 * 1024 * 1024) {
               await sock.sendMessage(
@@ -2631,7 +2631,7 @@ case "video":
       return
     }
     if (videoMeta.videoId) await enviarPortada(sock, from, msg, videoMeta, "video")
-    const videoBuffer = await zetaCorePlayDl(videoMeta.videoId || videoMeta.link || videoQuery, "video")
+    const videoBuffer = await zetaCorePlayDl(videoMeta, "video")
     const sendVideoDocumento = () =>
       sock.sendMessage(
         from,
