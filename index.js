@@ -948,6 +948,19 @@ function jidANumero(j) {
   return numeroLimpioSub(String(j || "").replace(/^@/, "").split("@")[0].split(":")[0])
 }
 
+async function numeroRealDelSender(sock, from, isGroup, sender, msg) {
+  // WhatsApp manda cada vez mas remitentes como @lid (no phone number): resolvemos el numero real
+  if (typeof sender !== "string" || !sender.endsWith("@lid")) return ""
+  if (!isGroup) return jidANumero(msg?.key?.remoteJidAlt || "")
+  try {
+    const meta = await getGroupMeta(sock, from)
+    const variante = jidVariantSet([sender])
+    const p = (meta?.participants || []).find((part) => jidInVariants(part.id, variante))
+    return jidANumero(p?.phoneNumber || "")
+  } catch {}
+  return ""
+}
+
 function sesionSubRegistrada(dir) {
   try {
     return JSON.parse(fs.readFileSync(path.join(dir, "creds.json"), "utf8"))?.registered === true
@@ -1261,7 +1274,7 @@ async function startBot(opts = {}) {
 
     const sender = msg.key.fromMe ? botJid : normalizeSenderJid(msg)
     if (!sender) return
-    const senderNumber = sender.split("@")[0]
+    const senderNumber = sender.split("@")[0].split(":")[0]
 
     let body = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || ""
     if (!body && msg.message.interactiveResponseMessage) {
@@ -1317,7 +1330,10 @@ async function startBot(opts = {}) {
         .map((value) => String(value).replace(/[^0-9]/g, ""))
         .filter(Boolean)
     )
-    const isOwner = ownerNumbers.has(cleanSenderNum) || sender === config.ownerNumber || msg.key.fromMe
+    const numRealSender = sender.endsWith("@lid") && !ownerNumbers.has(cleanSenderNum)
+      ? await numeroRealDelSender(sock, from, isGroup, sender, msg)
+      : ""
+    const isOwner = ownerNumbers.has(cleanSenderNum) || (numRealSender && ownerNumbers.has(numRealSender)) || sender === config.ownerNumber || msg.key.fromMe
 
     const senderVariants = jidVariantSet([msg.key.participant, msg.key.participantAlt, msg.key.participantPn, sender])
     const botVariants = jidVariantSet([sock.user?.id, sock.user?.lid])
