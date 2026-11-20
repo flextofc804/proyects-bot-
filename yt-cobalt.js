@@ -6,7 +6,7 @@ import { pipeline } from "stream/promises"
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 
-export const API_BASE_URL = "https://MI-API.com"
+export const API_BASE_URL = "https://zeta-core-api.vercel.app"
 
 const INTENTOS = 3
 const ESPERA_MS = 2000
@@ -24,7 +24,7 @@ export function videoIdDe(input) {
 }
 
 export function esErrorEdad(msg) {
-  return /AGE_RESTRICTED|restricci[oó]n de edad|restriccion de edad/i.test(String(msg || ""))
+  return /AGE_RESTRICTED|AGE_CHECK|restricci[oó]n de edad|restriccion de edad/i.test(String(msg || ""))
 }
 
 function mensajeDeErrorApi(data, status) {
@@ -39,31 +39,91 @@ function mensajeDeErrorApi(data, status) {
   return texto
 }
 
-async function pedirDescarga(kind, input) {
+function errorDesdeData(data, status) {
+  const e = new Error(mensajeDeErrorApi(data, status))
+  e.esDeLaApi = true
+  if (data?.reintentar === false) e.reintentar = false
+  return e
+}
+
+function zetaCoreDlKey() {
+  try {
+    const file = path.join(root, "zeta-core.txt")
+    if (!fs.existsSync(file)) return null
+    const lines = fs
+      .readFileSync(file, "utf8")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+    const pareceBypass = /^[a-zA-Z0-9]{25,}$/.test(lines[1] || "")
+    return lines[2] || (!pareceBypass && lines[1] ? lines[1] : null)
+  } catch {
+    return null
+  }
+}
+
+export function urlConClave(downloadUrl) {
+  const dlKey = zetaCoreDlKey()
+  if (!dlKey) return downloadUrl
+  try {
+    const u = new URL(downloadUrl)
+    if (u.searchParams.has("key") && !u.searchParams.get("key")) {
+      u.searchParams.set("key", dlKey)
+      return u.toString()
+    }
+  } catch {}
+  return downloadUrl
+}
+
+export async function pedirDescarga(kind, input) {
   const id = videoIdDe(input)
-  const esUrl = /youtu\.?be|youtube\.com/i.test(String(input || ""))
-  const body = id && esUrl ? { url: `https://www.youtube.com/watch?v=${id}` } : { query: String(input || "").trim() }
+  const texto = String(input || "").trim()
+  const esLink = id && /youtu\.?be|youtube\.com/i.test(texto)
+  const valorBuscado = esLink || id ? `https://www.youtube.com/watch?v=${id}` : texto
   const ruta = kind === "audio" ? "/ytmp3" : "/ytmp4"
-  const response = await fetch(`${API_BASE_URL}${ruta}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": "zenith-bot/1.0" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(90000)
-  })
-  if (!response.ok) {
-    let data = null
+
+  let ultimoError = null
+  for (const modo of ["post", "get"]) {
     try {
-      data = await response.json()
-    } catch {}
-    throw new Error(mensajeDeErrorApi(data, response.status))
+      let data = null
+      if (modo === "post") {
+        const response = await fetch(`${API_BASE_URL}${ruta}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json", "User-Agent": "zenith-bot/1.0" },
+          body: JSON.stringify(esLink || id ? { url: valorBuscado } : { query: texto }),
+          signal: AbortSignal.timeout(90000)
+        })
+        data = await response.json().catch(() => null)
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 405) {
+            const pareceErrorDeApi = data && (data.ok === false || data.code || data.message || data.error)
+            if (pareceErrorDeApi) throw errorDesdeData(data, response.status)
+            throw new Error("ruta POST no disponible")
+          }
+          throw errorDesdeData(data, response.status)
+        }
+      } else {
+        const params = new URLSearchParams({ query: valorBuscado })
+        const dlKey = zetaCoreDlKey()
+        if (dlKey) params.set("key", dlKey)
+        const response = await fetch(`${API_BASE_URL}${ruta}?${params.toString()}`, {
+          headers: { Accept: "application/json", "User-Agent": "zenith-bot/1.0" },
+          signal: AbortSignal.timeout(90000)
+        })
+        data = await response.json().catch(() => null)
+        if (!response.ok) throw errorDesdeData(data, response.status)
+      }
+      const downloadUrl = urlConClave(String(data?.downloadUrl || data?.descarga_directa || ""))
+      const title = String(data?.title || data?.titulo || "")
+      if (!/^https?:\/\//.test(downloadUrl)) throw new Error("la API no devolvio downloadUrl valido")
+      return { downloadUrl, title, videoId: id }
+    } catch (e) {
+      if (e?.message === "AGE_RESTRICTED" || e?.reintentar === false) throw e
+      if (modo === "get") throw e
+      ultimoError = e
+    }
   }
-  const data = await response.json().catch(() => null)
-  const downloadUrl = String(data?.downloadUrl || "")
-  const title = String(data?.title || "")
-  if (!/^https?:\/\//.test(downloadUrl)) {
-    throw new Error(mensajeDeErrorApi(data, response.status))
-  }
-  return { downloadUrl, title, videoId: id }
+  throw ultimoError || new Error("la API no devolvio downloadUrl valido")
 }
 
 function mimetypeDesdeTipo(contentType, extension, kind) {
@@ -127,7 +187,7 @@ export async function descargarYtCobalt(kind, input, prefix) {
       return { file, title, videoId, mimeType: mimetypeDe(contentType, file, kind) }
     } catch (e) {
       ultimoError = e
-      if (String(e?.message || e) === "AGE_RESTRICTED") throw e
+      if (String(e?.message || e) === "AGE_RESTRICTED" || e?.reintentar === false) throw e
       if (intento < INTENTOS) await new Promise((r) => setTimeout(r, ESPERA_MS))
     }
   }
