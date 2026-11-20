@@ -1611,7 +1611,8 @@ export async function zetaCorePlayMeta(query, kind) {
     duracion: Number(data?.duracion_segundos) || 0,
     link: String(data?.link || enlaceDeYouTube(texto)),
     miniatura: data?.miniatura || data?.thumbnail || "",
-    descargaDirecta: String(data?.descarga_directa || "").trim()
+    descargaDirecta: String(data?.descarga_directa || "").trim(),
+    consulta: texto
   }
 }
 
@@ -1645,24 +1646,23 @@ function urlConClaveDl(urlTexto) {
   return url.toString()
 }
 
-export async function zetaCorePlayDl(meta, kind) {
-  const grupo = meta && typeof meta === "object" ? meta : { descargaDirecta: meta, videoId: meta }
-  let directo = String(grupo.descargaDirecta || "").trim()
-  if (!directo && grupo.videoId) {
-    const config = zetaCoreConfig()
-    const params = new URLSearchParams({ query: String(grupo.videoId), kind: kind === "audio" ? "audio" : "video" })
-    directo = `${config.base}/dl?${params.toString()}`
-  }
-  if (!/^https?:\/\//i.test(directo)) throw new Error("la API no devolvio enlace de descarga")
-  const config = zetaCoreConfig()
-  let esWrapperDl = false
-  try {
-    esWrapperDl = /\/dl\/?$/.test(new URL(directo).pathname)
-  } catch {}
+function mensajeDeCuerpoJson(data, fallback) {
+  const code = typeof data?.code === "string" ? data.code : ""
+  const texto = data?.message || (typeof data?.error === "string" ? data.error : "") || data?.error?.message || code
+  const combinado = `${code} ${texto}`
+  if (/AGE_CHECK|AGE_RESTRICTED|restricci[oó]n de edad|restriccion de edad/i.test(combinado)) return "restriccion de edad"
+  return code && texto && !texto.includes(code) ? `${code}: ${texto}` : texto || fallback
+}
+
+async function descargarZetaDirecto(directo, config) {
   const headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
     Accept: "*/*"
   }
+  let esWrapperDl = false
+  try {
+    esWrapperDl = /\/dl\/?$/.test(new URL(directo).pathname)
+  } catch {}
   if (esWrapperDl) {
     directo = urlConClaveDl(directo)
     try {
@@ -1671,28 +1671,42 @@ export async function zetaCorePlayDl(meta, kind) {
     } catch {}
   }
   if (config.bypass) headers["x-vercel-protection-bypass"] = config.bypass
-  let respuesta = null
-  let ultimoError = null
   for (let intento = 1; intento <= 3; intento++) {
     try {
-      respuesta = await axios.get(directo, { responseType: "arraybuffer", timeout: 60000, headers, maxRedirects: 5 })
-      break
+      const respuesta = await axios.get(directo, { responseType: "arraybuffer", timeout: 60000, headers, maxRedirects: 5 })
+      const buffer = Buffer.from(respuesta?.data || [])
+      const ct = String(respuesta?.headers?.["content-type"] || respuesta?.headers?.["Content-Type"] || "")
+      const pareceJson = buffer.length && (buffer[0] === 0x7b || buffer[0] === 0x5b)
+      const pareceHtml = buffer.length && buffer[0] === 0x3c
+      if (pareceJson || /json/i.test(ct)) {
+        let data = null
+        try {
+          data = JSON.parse(buffer.toString("utf8"))
+        } catch {}
+        if (data && (data.ok === false || data.error || data.message)) {
+          const e = new Error(mensajeDeCuerpoJson(data, "la API no devolvio el archivo"))
+          e.status = Number(respuesta?.status) === 200 ? 502 : Number(respuesta?.status) || 0
+          e.reintentar = data?.reintentar === true
+          throw e
+        }
+      } else if (/html/i.test(ct) || pareceHtml) {
+        throw new Error("el enlace de descarga devolvio HTML en lugar del archivo (token del CDN vencido)")
+      }
+      if (!buffer.length) throw new Error("archivo vacío de ZETA-CORE")
+      if (buffer.length < 1024) throw new Error("el archivo recibido es demasiado chico para ser un media valido")
+      return buffer
     } catch (e) {
-      ultimoError = e
-      const status = Number(e?.response?.status) || 0
-      let reintentar = false
-      let mensaje = status ? `HTTP ${status}` : String(e?.message || e)
+      const status = Number(e?.response?.status || e?.status) || 0
+      let reintentar = e?.reintentar === true
+      let mensaje = String(e?.message || e)
       if (status && e?.response?.data) {
         try {
           const data = JSON.parse(Buffer.from(e.response.data).toString("utf8"))
           reintentar = data?.reintentar === true
-          const code = typeof data?.code === "string" ? data.code : ""
-          const texto = data?.message || (typeof data?.error === "string" ? data.error : "") || data?.error?.message || code
-          const combinado = `${code} ${texto}`
-          if (/AGE_CHECK|AGE_RESTRICTED|restricci[oó]n de edad|restriccion de edad/i.test(combinado)) mensaje = "restriccion de edad"
-          else mensaje = code && texto && !texto.includes(code) ? `${code}: ${texto}` : texto || mensaje
+          mensaje = mensajeDeCuerpoJson(data, `HTTP ${status}`)
         } catch {}
       }
+      if (/^Request failed with status code/i.test(mensaje) && status && mensaje.endsWith(String(status))) mensaje = `HTTP ${status}`
       if (status === 401) throw new Error("clave /dl rechazada (401): la DL_KEY del entorno de Vercel esta desactualizada")
       if (status === 400 || status === 404) throw new Error(mensaje)
       if (status === 502 && reintentar && intento < 3) {
@@ -1702,10 +1716,42 @@ export async function zetaCorePlayDl(meta, kind) {
       throw new Error(mensaje)
     }
   }
-  if (!respuesta) throw ultimoError || new Error("fallo la descarga de ZETA-CORE")
-  const buffer = Buffer.from(respuesta?.data || [])
-  if (!buffer.length) throw new Error("archivo vacío de ZETA-CORE")
-  return buffer
+  throw new Error("fallo la descarga de ZETA-CORE")
+}
+
+export async function zetaCorePlayDl(meta, kind) {
+  if (!meta || typeof meta !== "object") meta = { descargaDirecta: meta, videoId: meta }
+  const config = zetaCoreConfig()
+  const wrapperDe = (id) =>
+    `${config.base}/dl?${new URLSearchParams({ query: String(id), kind: kind === "audio" ? "audio" : "video" }).toString()}`
+  let directo = String(meta.descargaDirecta || "").trim() || (meta.videoId ? wrapperDe(meta.videoId) : "")
+  if (!/^https?:\/\//i.test(directo)) throw new Error("la API no devolvio enlace de descarga")
+  let wrapperProbado = Boolean(meta.videoId) && directo === wrapperDe(meta.videoId)
+  let ultimoError = null
+  for (let ciclo = 1; ciclo <= 4; ciclo++) {
+    try {
+      return await descargarZetaDirecto(directo, config)
+    } catch (e) {
+      ultimoError = e
+      const msg = String(e?.message || e)
+      if (/401|falta la clave|restriccion de edad|no esta disponible|VIDEO_UNAVAILABLE|VIDEO_ID_INVALID|HTTP 400|HTTP 404/.test(msg)) throw e
+      if (ciclo >= 4) throw e
+      await sleepMs(ciclo === 1 ? 3000 : 8000)
+      let nuevo = ""
+      if (!wrapperProbado && meta.videoId) {
+        nuevo = wrapperDe(meta.videoId)
+        wrapperProbado = true
+      } else if (meta.consulta) {
+        try {
+          const fresco = await zetaCorePlayMeta(meta.consulta, kind)
+          nuevo = String(fresco?.descargaDirecta || "").trim()
+        } catch {}
+      }
+      if (!/^https?:\/\//i.test(nuevo) || nuevo === directo) throw ultimoError
+      directo = nuevo
+    }
+  }
+  throw ultimoError || new Error("fallo la descarga de ZETA-CORE")
 }
 
 export {
