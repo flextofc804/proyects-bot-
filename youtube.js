@@ -1029,7 +1029,10 @@ async function zetaCoreJson(route, params, timeoutMs = 60000) {
       (typeof data?.error === "string" ? data.error : null) ||
       data?.message ||
       `HTTP ${response.status}`
-    throw new Error(msg)
+    const err = new Error(msg)
+    err.status = response.status
+    err.reintentar = data?.reintentar === true
+    throw err
   }
   return data
 }
@@ -1108,8 +1111,11 @@ async function zetaCoreJsonReintentado(route, params) {
       break
     } catch (e) {
       metaError = e
-      if (!esErrorReintentable(e?.message || e)) throw e
-      if (intentoMeta < 3) await sleepMs(intentoMeta === 1 ? 2000 : 4000)
+      const status = Number(e?.status) || 0
+      if (e?.reintentar !== true && !esErrorReintentable(e?.message || e)) throw e
+      const maxIntentos = status === 404 ? 2 : 3
+      if (intentoMeta >= maxIntentos) throw e
+      await sleepMs(status === 502 ? (intentoMeta === 1 ? 3000 : 8000) : 3000)
     }
   }
   if (!data) throw metaError
@@ -1576,15 +1582,6 @@ export async function diagnose() {
   return lines.join("\n")
 }
 
-function durSegDesdeTexto(t) {
-  const texto = String(t || "").trim()
-  if (!texto) return 0
-  if (/^\d+$/.test(texto)) return Number(texto)
-  const partes = texto.split(":").map((p) => Number(p) || 0)
-  if (!partes.length || partes.some((p) => !Number.isFinite(p))) return 0
-  return partes.reduce((acc, p) => acc * 60 + p, 0)
-}
-
 function enlaceDeYouTube(query) {
   const texto = String(query || "").trim()
   const id = extractVideoId(texto)
@@ -1600,66 +1597,114 @@ function numeroDe(v) {
 
 export async function zetaCorePlayMeta(query, kind) {
   const texto = String(query || "").trim()
-  let busqueda = texto
-  let metaBusqueda = null
-  if (!extractVideoId(texto)) {
-    try {
-      const data = await zetaCoreJson("/ytsearch", new URLSearchParams({ query: texto, limit: "1" }))
-      const primero = data?.resultados?.[0]
-      if (primero?.url) {
-        metaBusqueda = primero
-        busqueda = String(primero.url)
-      }
-    } catch {}
-  }
-  const params = new URLSearchParams({ query: busqueda })
+  const params = new URLSearchParams(/^https?:\/\//i.test(texto) ? { url: texto } : { query: texto })
   if (kind !== "audio") params.set("quality", "720p")
   const data = await zetaCoreJsonReintentado(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
-  const videoId = extractVideoId(String(data?.videoId || "")) || extractVideoId(String(data?.link || "")) || extractVideoId(busqueda) || null
+  if (data?.aviso) log(`ZETA-CORE aviso: ${String(data.aviso).slice(0, 120)}`)
+  const videoId = extractVideoId(String(data?.videoId || "")) || extractVideoId(String(data?.link || "")) || extractVideoId(texto) || null
   return {
     videoId,
-    titulo: data?.titulo || data?.title || metaBusqueda?.title || "",
-    canal: data?.canal || data?.autor || data?.channel || metaBusqueda?.canal || "",
-    visitas: numeroDe(data?.visitas ?? data?.views) || numeroDe(metaBusqueda?.visitas),
+    titulo: data?.titulo || data?.title || "",
+    canal: data?.canal || data?.autor || data?.channel || "",
+    visitas: numeroDe(data?.visitas ?? data?.views),
     likes: numeroDe(data?.likes),
-    duracion: Number(data?.duracion_segundos) || durSegDesdeTexto(metaBusqueda?.duracion || data?.duracion || ""),
-    link: String(data?.link || enlaceDeYouTube(busqueda)),
-    miniatura: data?.miniatura || data?.thumbnail || metaBusqueda?.thumbnail || ""
+    duracion: Number(data?.duracion_segundos) || 0,
+    link: String(data?.link || enlaceDeYouTube(texto)),
+    miniatura: data?.miniatura || data?.thumbnail || "",
+    descargaDirecta: String(data?.descarga_directa || "").trim()
   }
 }
 
-export async function zetaCorePlayDl(query, kind) {
-  const config = zetaCoreConfig()
-  if (!config.dlKey) throw new Error("falta la clave /dl en la línea 3 de zeta-core.txt")
-  const params = new URLSearchParams({
-    query: String(query),
-    kind: kind === "audio" ? "audio" : "video",
-    key: config.dlKey
-  })
-  if (kind !== "audio") params.set("quality", "720p")
-  const url = `${config.base}/dl?${params.toString()}`
-  const headers = { "User-Agent": "zenith-bot/1.0" }
-  if (config.bypass) headers["x-vercel-protection-bypass"] = config.bypass
-  let respuesta
+function zetaCoreDlKey() {
   try {
-    respuesta = await axios.get(url, { responseType: "arraybuffer", timeout: 60000, headers, maxRedirects: 5 })
-  } catch (e) {
-    const status = e?.response?.status
-    let mensaje = status ? `HTTP ${status}` : String(e?.message || e)
-    if (status && e?.response?.data) {
-      try {
-        const data = JSON.parse(Buffer.from(e.response.data).toString("utf8"))
-        const code = typeof data?.code === "string" ? data.code : ""
-        const texto = data?.message || (typeof data?.error === "string" ? data.error : "") || data?.error?.message || code
-        const combinado = `${code} ${texto}`
-        if (/AGE_CHECK|AGE_RESTRICTED|restricci[oó]n de edad|restriccion de edad/i.test(combinado)) mensaje = "restriccion de edad"
-        else mensaje = code && texto && !texto.includes(code) ? `${code}: ${texto}` : texto || mensaje
-      } catch {}
-    }
-    throw new Error(mensaje)
+    const file = path.join(root, "zeta-core.txt")
+    if (!fs.existsSync(file)) return null
+    const lines = fs
+      .readFileSync(file, "utf8")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+    const linea2 = lines[1] && !/^https?:\/\//i.test(lines[1]) ? lines[1] : ""
+    return linea2 || lines[2] || null
+  } catch {}
+  return null
+}
+
+function urlConClaveDl(urlTexto) {
+  let url
+  try {
+    url = new URL(String(urlTexto))
+  } catch {
+    return String(urlTexto)
   }
+  if (!/\/dl\/?$/.test(url.pathname)) return String(urlTexto)
+  if (url.searchParams.get("key")) return String(urlTexto)
+  const key = zetaCoreDlKey()
+  if (!key) throw new Error("la API devolvio un enlace /dl que exige clave pero falta la clave en la linea 2 de zeta-core.txt")
+  url.searchParams.set("key", key)
+  return url.toString()
+}
+
+export async function zetaCorePlayDl(meta, kind) {
+  const grupo = meta && typeof meta === "object" ? meta : { descargaDirecta: meta, videoId: meta }
+  let directo = String(grupo.descargaDirecta || "").trim()
+  if (!directo && grupo.videoId) {
+    const config = zetaCoreConfig()
+    const params = new URLSearchParams({ query: String(grupo.videoId), kind: kind === "audio" ? "audio" : "video" })
+    directo = `${config.base}/dl?${params.toString()}`
+  }
+  if (!/^https?:\/\//i.test(directo)) throw new Error("la API no devolvio enlace de descarga")
+  const config = zetaCoreConfig()
+  let esWrapperDl = false
+  try {
+    esWrapperDl = /\/dl\/?$/.test(new URL(directo).pathname)
+  } catch {}
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    Accept: "*/*"
+  }
+  if (esWrapperDl) {
+    directo = urlConClaveDl(directo)
+    try {
+      const clave = new URL(directo).searchParams.get("key")
+      if (clave) headers["x-api-key"] = clave
+    } catch {}
+  }
+  if (config.bypass) headers["x-vercel-protection-bypass"] = config.bypass
+  let respuesta = null
+  let ultimoError = null
+  for (let intento = 1; intento <= 3; intento++) {
+    try {
+      respuesta = await axios.get(directo, { responseType: "arraybuffer", timeout: 60000, headers, maxRedirects: 5 })
+      break
+    } catch (e) {
+      ultimoError = e
+      const status = Number(e?.response?.status) || 0
+      let reintentar = false
+      let mensaje = status ? `HTTP ${status}` : String(e?.message || e)
+      if (status && e?.response?.data) {
+        try {
+          const data = JSON.parse(Buffer.from(e.response.data).toString("utf8"))
+          reintentar = data?.reintentar === true
+          const code = typeof data?.code === "string" ? data.code : ""
+          const texto = data?.message || (typeof data?.error === "string" ? data.error : "") || data?.error?.message || code
+          const combinado = `${code} ${texto}`
+          if (/AGE_CHECK|AGE_RESTRICTED|restricci[oó]n de edad|restriccion de edad/i.test(combinado)) mensaje = "restriccion de edad"
+          else mensaje = code && texto && !texto.includes(code) ? `${code}: ${texto}` : texto || mensaje
+        } catch {}
+      }
+      if (status === 401) throw new Error("clave /dl rechazada (401): la DL_KEY del entorno de Vercel esta desactualizada")
+      if (status === 400 || status === 404) throw new Error(mensaje)
+      if (status === 502 && reintentar && intento < 3) {
+        await sleepMs(intento === 1 ? 3000 : 8000)
+        continue
+      }
+      throw new Error(mensaje)
+    }
+  }
+  if (!respuesta) throw ultimoError || new Error("fallo la descarga de ZETA-CORE")
   const buffer = Buffer.from(respuesta?.data || [])
-  if (!buffer.length) throw new Error("archivo vacío de ZETA-CORE /dl")
+  if (!buffer.length) throw new Error("archivo vacío de ZETA-CORE")
   return buffer
 }
 
