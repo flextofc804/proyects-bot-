@@ -940,7 +940,9 @@ async function customApiDownload(videoId, kind, prefix) {
 
 function esErrorReintentable(msg) {
   const texto = String(msg || "")
-  return texto.includes("IP_BLOQUEADA") || /restriccion de edad|inicio de sesion|anti-bot/i.test(texto)
+  // Restriccion de edad / video inexistente: PERMANENTES, reintentar no cambia nada
+  if (/restriccion de edad|AGE_CHECK|VIDEO_UNAVAILABLE|no esta disponible/i.test(texto)) return false
+  return texto.includes("IP_BLOQUEADA") || /anti-bot/i.test(texto)
 }
 
 async function zetaCoreDlRetry(query, kind, prefix, quality) {
