@@ -884,26 +884,31 @@ function extensionFromType(type, kind) {
   return kind === "audio" ? ".m4a" : ".mp4"
 }
 
+async function mensajeDeErrorApi(response, fallback) {
+  try {
+    const data = await response.json()
+    const code = typeof data?.code === "string" ? data.code : typeof data?.error?.code === "string" ? data.error.code : ""
+    const texto =
+      data?.message ||
+      (typeof data?.error === "string" ? data.error : null) ||
+      data?.error?.message ||
+      code
+    if (code && texto && !texto.includes(code)) return `${code}: ${texto}`
+    if (texto) return texto
+  } catch {}
+  return fallback
+}
+
 async function downloadApiFile(url, destination, kind, extraHeaders = {}) {
   const response = await fetch(url, {
     headers: { "User-Agent": "zenith-bot/1.0", "bypass-tunnel-reminder": "true", ...extraHeaders },
     signal: AbortSignal.timeout(900000)
   })
   if (!response.ok) {
-    let message = `HTTP ${response.status}`
-    try {
-      const data = await response.json()
-      message = data.error || message
-    } catch {}
-    throw new Error(message)
+    throw new Error(await mensajeDeErrorApi(response, `HTTP ${response.status}`))
   }
   if (/json/i.test(response.headers.get("content-type") || "")) {
-    let message = "error de la API propia"
-    try {
-      const data = await response.json()
-      message = data.error || message
-    } catch {}
-    throw new Error(message)
+    throw new Error(await mensajeDeErrorApi(response, "error de la API propia"))
   }
   const disposition = response.headers.get("content-disposition") || ""
   const nameMatch = disposition.match(/filename="?([^";]+)"?/i)
