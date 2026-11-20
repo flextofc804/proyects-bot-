@@ -1616,22 +1616,22 @@ export async function zetaCorePlayMeta(query, kind) {
   }
 }
 
-function zetaCoreDlKey() {
+function zetaCoreDlClaves() {
   try {
     const file = path.join(root, "zeta-core.txt")
-    if (!fs.existsSync(file)) return null
+    if (!fs.existsSync(file)) return []
     const lines = fs
       .readFileSync(file, "utf8")
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter(Boolean)
-    const linea2 = lines[1] && !/^https?:\/\//i.test(lines[1]) ? lines[1] : ""
-    return linea2 || lines[2] || null
+    const candidatas = [lines[2], lines[1]].filter((c) => c && !/^https?:\/\//i.test(c))
+    return [...new Set(candidatas)]
   } catch {}
-  return null
+  return []
 }
 
-function urlConClaveDl(urlTexto) {
+function urlConClaveDl(urlTexto, clave) {
   let url
   try {
     url = new URL(String(urlTexto))
@@ -1640,35 +1640,50 @@ function urlConClaveDl(urlTexto) {
   }
   if (!/\/dl\/?$/.test(url.pathname)) return String(urlTexto)
   if (url.searchParams.get("key")) return String(urlTexto)
-  const key = zetaCoreDlKey()
-  if (!key) throw new Error("la API devolvio un enlace /dl que exige clave pero falta la clave en la linea 2 de zeta-core.txt")
-  url.searchParams.set("key", key)
+  if (!clave) throw new Error("la API devolvio un enlace /dl que exige clave pero falta la clave en la linea 3 de zeta-core.txt")
+  url.searchParams.set("key", clave)
   return url.toString()
 }
 
 function mensajeDeCuerpoJson(data, fallback) {
-  const code = typeof data?.code === "string" ? data.code : ""
-  const texto = data?.message || (typeof data?.error === "string" ? data.error : "") || data?.error?.message || code
+  const d = data && typeof data === "object" ? data : {}
+  const code = typeof d.code === "string" ? d.code : ""
+  const texto = d.message || (typeof d.error === "string" ? d.error : "") || d.error?.message || ""
   const combinado = `${code} ${texto}`
   if (/AGE_CHECK|AGE_RESTRICTED|restricci[oó]n de edad|restriccion de edad/i.test(combinado)) return "restriccion de edad"
-  return code && texto && !texto.includes(code) ? `${code}: ${texto}` : texto || fallback
+  return code && texto && !texto.includes(code) ? `${code}: ${texto}` : texto || fallback || "error de ZETA-CORE"
 }
 
-async function descargarZetaDirecto(directo, config) {
+async function descargarZetaDirecto(directo, config, claves) {
   const headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
     Accept: "*/*"
   }
+  let usada = ""
   let esWrapperDl = false
   try {
     esWrapperDl = /\/dl\/?$/.test(new URL(directo).pathname)
   } catch {}
   if (esWrapperDl) {
-    directo = urlConClaveDl(directo)
-    try {
-      const clave = new URL(directo).searchParams.get("key")
-      if (clave) headers["x-api-key"] = clave
-    } catch {}
+    const existente = (() => {
+      try {
+        const v = new URL(directo).searchParams.get("key")
+        return v ? v : ""
+      } catch {
+        return ""
+      }
+    })()
+    if (existente) {
+      usada = existente
+      directo = String(directo)
+    } else {
+      if (!claves || !claves.length) throw new Error("la API devolvio un enlace /dl que exige clave pero falta la clave en la linea 3 de zeta-core.txt")
+      directo = urlConClaveDl(directo, claves[0])
+      try {
+        usada = new URL(directo).searchParams.get("key") || ""
+      } catch {}
+    }
+    if (usada) headers["x-api-key"] = usada
   }
   if (config.bypass) headers["x-vercel-protection-bypass"] = config.bypass
   for (let intento = 1; intento <= 3; intento++) {
@@ -1707,7 +1722,14 @@ async function descargarZetaDirecto(directo, config) {
         } catch {}
       }
       if (/^Request failed with status code/i.test(mensaje) && status && mensaje.endsWith(String(status))) mensaje = `HTTP ${status}`
-      if (status === 401) throw new Error("clave /dl rechazada (401): la DL_KEY del entorno de Vercel esta desactualizada")
+      if (status === 401) {
+        const restante = (claves || []).find((c) => c !== usada) || null
+        const err = new Error(restante ? "clave /dl rechazada (401)" : "clave /dl rechazada (401): la DL_KEY del entorno de Vercel esta desactualizada")
+        err.esClaveRechazada = true
+        err.claveRechazada = usada
+        err.siguienteClave = restante
+        throw err
+      }
       if (status === 400 || status === 404) throw new Error(mensaje)
       if (status === 502 && reintentar && intento < 3) {
         await sleepMs(intento === 1 ? 3000 : 8000)
@@ -1722,16 +1744,33 @@ async function descargarZetaDirecto(directo, config) {
 export async function zetaCorePlayDl(meta, kind) {
   if (!meta || typeof meta !== "object") meta = { descargaDirecta: meta, videoId: meta }
   const config = zetaCoreConfig()
+  const claves = zetaCoreDlClaves()
   const wrapperDe = (id) =>
     `${config.base}/dl?${new URLSearchParams({ query: String(id), kind: kind === "audio" ? "audio" : "video" }).toString()}`
   let directo = String(meta.descargaDirecta || "").trim() || (meta.videoId ? wrapperDe(meta.videoId) : "")
   if (!/^https?:\/\//i.test(directo)) throw new Error("la API no devolvio enlace de descarga")
   let wrapperProbado = Boolean(meta.videoId) && directo === wrapperDe(meta.videoId)
   let ultimoError = null
+  const clavesProbadas = new Set()
   for (let ciclo = 1; ciclo <= 4; ciclo++) {
     try {
-      return await descargarZetaDirecto(directo, config)
+      return await descargarZetaDirecto(directo, config, claves)
     } catch (e) {
+      if (e?.esClaveRechazada) {
+        if (e?.claveRechazada) clavesProbadas.add(String(e.claveRechazada))
+        if (e?.siguienteClave && !clavesProbadas.has(String(e.siguienteClave))) {
+          clavesProbadas.add(String(e.siguienteClave))
+          try {
+            const u = new URL(directo)
+            if (/\/dl\/?$/.test(u.pathname)) {
+              u.searchParams.set("key", e.siguienteClave)
+              directo = u.toString()
+              continue
+            }
+          } catch {}
+        }
+        throw new Error("clave /dl rechazada (401): la DL_KEY del entorno de Vercel esta desactualizada")
+      }
       ultimoError = e
       const msg = String(e?.message || e)
       if (/401|falta la clave|restriccion de edad|no esta disponible|VIDEO_UNAVAILABLE|VIDEO_ID_INVALID|HTTP 400|HTTP 404/.test(msg)) throw e
