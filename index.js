@@ -229,7 +229,7 @@ function fmtVisitas(v) {
 }
 
 function decorarPortada(meta, tipo) {
-  const [s1, s2, s3, s4, s5] = elegirSimbolos(5)
+  const [s1, s2, s3, s4, s5, s6, s7] = elegirSimbolos(7)
   const titulo = estilizarLetra(meta.titulo || "desconocido")
   const dur = fmtDuracion(meta.duracion)
   const vis = fmtVisitas(meta.visitas)
@@ -238,7 +238,9 @@ function decorarPortada(meta, tipo) {
   cap += `${s2} ᴄᴀɴᴀʟ: ${meta.canal || "desconocido"}\n`
   if (dur) cap += `${s3} ᴅᴜʀᴀᴄɪᴏ́ɴ: ${dur}\n`
   if (vis) cap += `${s4} ᴠɪꜱᴛᴀꜱ: ${vis}\n`
-  cap += `\n${s5} ${tipo === "audio" ? "🎧 ᴀᴜᴅɪᴏ ᴇɴ ᴄᴀᴍɪɴᴏ..." : "🎬 ᴠɪᴅᴇᴏ ᴇɴ ᴄᴀᴍɪɴᴏ..."}`
+  if (meta.likes) cap += `${s5} Likꜱ: ${fmtVisitas(meta.likes)}\n`
+  if (meta.link) cap += `${s6} ${meta.link}\n`
+  cap += `\n${s7} ${tipo === "audio" ? "🎧 ᴀᴜᴅɪᴏ ᴇɴ ᴄᴀᴍɪɴᴏ..." : "🎬 ᴠɪᴅᴇᴏ ᴇɴ ᴄᴀᴍɪɴᴏ..."}`
   return cap
 }
 
@@ -2519,35 +2521,29 @@ case "play":
               const picked = searchHistory.get(from)[Number(text.trim()) - 1]
               if (picked) audioQuery = `https://www.youtube.com/watch?v=${picked.id}`
             }
-            const { resolveVideo, mediaFile, zetaCoreMeta } = await import("./youtube.js")
-            const audioVideoId = (await resolveVideo(audioQuery)) || String(audioQuery).trim()
-            if (!audioVideoId) {
+            const { zetaCorePlayMeta, zetaCorePlayDl } = await import("./youtube.js")
+            const audioMeta = await zetaCorePlayMeta(audioQuery, "audio")
+            if (!audioMeta.videoId && !audioMeta.link) {
               await reply("No se encontró el video")
               return
             }
-            try {
-              const audioMeta = await zetaCoreMeta(audioQuery, "audio")
-              if (audioMeta?.videoId) await enviarPortada(sock, from, msg, audioMeta, "audio")
-            } catch {}
-            const audioFile = await mediaFile(audioQuery, "audio")
-            const audioBuffer = fs.readFileSync(audioFile)
-            const audioExt = String(path.extname(audioFile) || "").toLowerCase()
+            if (audioMeta.videoId) await enviarPortada(sock, from, msg, audioMeta, "audio")
+            const audioBuffer = await zetaCorePlayDl(audioMeta.videoId || audioMeta.link || audioQuery, "audio")
             const isVoice = command === "ytaudio" || command === "playaudio"
             if (audioBuffer.length > 20 * 1024 * 1024) {
               await sock.sendMessage(
                 from,
-                { document: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", fileName: `erzabot_audio${audioExt || ".m4a"}`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Audio largo enviado como documento" },
+                { document: audioBuffer, mimetype: "audio/mpeg", fileName: `erzabot_audio.mp3`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Audio largo enviado como documento" },
                 { quoted: msg }
               )
             } else {
               await sock.sendMessage(
                 from,
-                { audio: audioBuffer, mimetype: audioExt === ".mp3" ? "audio/mpeg" : "audio/mp4", ptt: isVoice },
+                { audio: audioBuffer, mimetype: "audio/mpeg", ptt: isVoice },
                 { quoted: msg }
               )
             }
             reaccionar(sock, from, msg, ["✅"]).catch(() => {})
-            removeFile(audioFile)
           } catch (e) {
             const reason = String(e?.message || e)
             console.error("Error en play:", reason, e?.stack || "")
@@ -2559,7 +2555,7 @@ case "play":
               await reply("⚠️ El servidor de descargas tiene la IP temporal bloqueada por YouTube.\n\nProbá de nuevo en 1-2 minutos.")
             } else if (/restriccion de edad|inicio de sesion|anti-bot/i.test(reason)) {
               await reply("⚠️ Ese video tiene restriccón de edad o verificación anti-bot de YouTube.\n\nIntenté varias veces. Probá con otro video o de nuevo en unos minutos.")
-            } else if (reason.includes("aborted due to timeout")) {
+            } else if (reason.includes("aborted due to timeout") || /timeout of \d+ms/i.test(reason)) {
               await reply("⏳ La API tardó demasiado en procesar el video (60 segundos).\n\nProbá de nuevo en unos minutos.")
             } else {
               await reply("Error al descargar el audio, intentá con otro video en unos minutos.")
@@ -2628,32 +2624,27 @@ case "video":
       const picked = searchHistory.get(from)[Number(text.trim()) - 1]
       if (picked) videoQuery = `https://www.youtube.com/watch?v=${picked.id}`
     }
-    const { resolveVideo, mediaFile, zetaCoreMeta } = await import("./youtube.js")
-    const videoVideoId = (await resolveVideo(videoQuery)) || String(videoQuery).trim()
-    if (!videoVideoId) {
+    const { zetaCorePlayMeta, zetaCorePlayDl } = await import("./youtube.js")
+    const videoMeta = await zetaCorePlayMeta(videoQuery, "video")
+    if (!videoMeta.videoId && !videoMeta.link) {
       await reply("No se encontró el video")
       return
     }
-    try {
-      const videoMeta = await zetaCoreMeta(videoQuery, "video")
-      if (videoMeta?.videoId) await enviarPortada(sock, from, msg, videoMeta, "video")
-    } catch {}
-    const videoFile = await mediaFile(videoQuery, "video")
-    const videoExt = String(path.extname(videoFile) || "").toLowerCase()
-    const videoSize = fs.statSync(videoFile).size
+    if (videoMeta.videoId) await enviarPortada(sock, from, msg, videoMeta, "video")
+    const videoBuffer = await zetaCorePlayDl(videoMeta.videoId || videoMeta.link || videoQuery, "video")
     const sendVideoDocumento = () =>
       sock.sendMessage(
         from,
-        { document: { url: videoFile }, mimetype: "video/mp4", fileName: `erzabot_video${videoExt || ".mp4"}`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video pesado enviado como documento" },
+        { document: videoBuffer, mimetype: "video/mp4", fileName: `erzabot_video.mp4`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video pesado enviado como documento" },
         { quoted: msg }
       )
-    if (videoSize > 50 * 1024 * 1024) {
+    if (videoBuffer.length > 50 * 1024 * 1024) {
       await sendVideoDocumento()
     } else {
       try {
         await sock.sendMessage(
           from,
-          { video: { url: videoFile }, mimetype: videoExt === ".webm" ? "video/webm" : "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video" },
+          { video: videoBuffer, mimetype: "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video" },
           { quoted: msg }
         )
       } catch {
@@ -2661,7 +2652,6 @@ case "video":
       }
     }
     reaccionar(sock, from, msg, ["✅"]).catch(() => {})
-    removeFile(videoFile)
   } catch (e) {
     const reason = String(e?.message || e)
     console.error("Error en mp4:", reason, e?.stack || "")
@@ -2673,7 +2663,7 @@ case "video":
       await reply("⚠️ El servidor de descargas tiene la IP temporal bloqueada por YouTube.\n\nProbá de nuevo en 1-2 minutos.")
     } else if (/restriccion de edad|inicio de sesion|anti-bot/i.test(reason)) {
       await reply("⚠️ Ese video tiene restricción de edad o verificación anti-bot de YouTube.\n\nIntenté varias veces. Probá con otro video o de nuevo en unos minutos.")
-    } else if (reason.includes("aborted due to timeout")) {
+    } else if (reason.includes("aborted due to timeout") || /timeout of \d+ms/i.test(reason)) {
       await reply("⏳ La API tardó demasiado en procesar el video (60 segundos).\n\nProbá de nuevo en unos minutos.")
     } else {
       await reply("Error al descargar el video, intentá con otro en unos minutos.")
