@@ -6,6 +6,7 @@ import { exec, spawn } from "child_process"
 import { promisify } from "util"
 import { fileURLToPath } from "url"
 import { Readable } from "stream"
+import axios from "axios"
 import { pipeline } from "stream/promises"
 
 const execAsync = promisify(exec)
@@ -1573,6 +1574,93 @@ export async function diagnose() {
   }
 
   return lines.join("\n")
+}
+
+function durSegDesdeTexto(t) {
+  const texto = String(t || "").trim()
+  if (!texto) return 0
+  if (/^\d+$/.test(texto)) return Number(texto)
+  const partes = texto.split(":").map((p) => Number(p) || 0)
+  if (!partes.length || partes.some((p) => !Number.isFinite(p))) return 0
+  return partes.reduce((acc, p) => acc * 60 + p, 0)
+}
+
+function enlaceDeYouTube(query) {
+  const texto = String(query || "").trim()
+  const id = extractVideoId(texto)
+  if (id) return `https://www.youtube.com/watch?v=${id}`
+  if (/^https?:\/\//.test(texto)) return texto
+  return ""
+}
+
+function numeroDe(v) {
+  const n = Number(String(v ?? "").toString().replace(/\D/g, ""))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+export async function zetaCorePlayMeta(query, kind) {
+  const texto = String(query || "").trim()
+  let busqueda = texto
+  let metaBusqueda = null
+  if (!extractVideoId(texto)) {
+    try {
+      const data = await zetaCoreJson("/ytsearch", new URLSearchParams({ query: texto, limit: "1" }))
+      const primero = data?.resultados?.[0]
+      if (primero?.url) {
+        metaBusqueda = primero
+        busqueda = String(primero.url)
+      }
+    } catch {}
+  }
+  const params = new URLSearchParams({ query: busqueda })
+  if (kind !== "audio") params.set("quality", "720p")
+  const data = await zetaCoreJsonReintentado(kind === "audio" ? "/ytmp3" : "/ytmp4", params)
+  const videoId = extractVideoId(String(data?.videoId || "")) || extractVideoId(String(data?.link || "")) || extractVideoId(busqueda) || null
+  return {
+    videoId,
+    titulo: data?.titulo || data?.title || metaBusqueda?.title || "",
+    canal: data?.canal || data?.autor || data?.channel || metaBusqueda?.canal || "",
+    visitas: numeroDe(data?.visitas ?? data?.views) || numeroDe(metaBusqueda?.visitas),
+    likes: numeroDe(data?.likes),
+    duracion: Number(data?.duracion_segundos) || durSegDesdeTexto(metaBusqueda?.duracion || data?.duracion || ""),
+    link: String(data?.link || enlaceDeYouTube(busqueda)),
+    miniatura: data?.miniatura || data?.thumbnail || metaBusqueda?.thumbnail || ""
+  }
+}
+
+export async function zetaCorePlayDl(query, kind) {
+  const config = zetaCoreConfig()
+  if (!config.dlKey) throw new Error("falta la clave /dl en la línea 3 de zeta-core.txt")
+  const params = new URLSearchParams({
+    query: String(query),
+    kind: kind === "audio" ? "audio" : "video",
+    key: config.dlKey
+  })
+  if (kind !== "audio") params.set("quality", "720p")
+  const url = `${config.base}/dl?${params.toString()}`
+  const headers = { "User-Agent": "zenith-bot/1.0" }
+  if (config.bypass) headers["x-vercel-protection-bypass"] = config.bypass
+  let respuesta
+  try {
+    respuesta = await axios.get(url, { responseType: "arraybuffer", timeout: 60000, headers, maxRedirects: 5 })
+  } catch (e) {
+    const status = e?.response?.status
+    let mensaje = status ? `HTTP ${status}` : String(e?.message || e)
+    if (status && e?.response?.data) {
+      try {
+        const data = JSON.parse(Buffer.from(e.response.data).toString("utf8"))
+        const code = typeof data?.code === "string" ? data.code : ""
+        const texto = data?.message || (typeof data?.error === "string" ? data.error : "") || data?.error?.message || code
+        const combinado = `${code} ${texto}`
+        if (/AGE_CHECK|AGE_RESTRICTED|restricci[oó]n de edad|restriccion de edad/i.test(combinado)) mensaje = "restriccion de edad"
+        else mensaje = code && texto && !texto.includes(code) ? `${code}: ${texto}` : texto || mensaje
+      } catch {}
+    }
+    throw new Error(mensaje)
+  }
+  const buffer = Buffer.from(respuesta?.data || [])
+  if (!buffer.length) throw new Error("archivo vacío de ZETA-CORE /dl")
+  return buffer
 }
 
 export {
