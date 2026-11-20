@@ -3573,6 +3573,27 @@ case "video":
           await reply("Dueño del bot actualizado")
           break
 
+        case "update":
+        case "pull":
+        case "git":
+          if (!isOwner) {
+            await reply("Solo el dueño puede usar este comando")
+            return
+          }
+          if (command === "git" && text.trim().toLowerCase() !== "pull") {
+            await reply("Usa .git pull (o .update / .pull)")
+            return
+          }
+          await reply("⏳ Ejecutando git pull...")
+          try {
+            const { stdout, stderr } = await execAsync("git pull", { cwd: path.dirname(fileURLToPath(import.meta.url)), timeout: 60000 })
+            const salida = String(stdout || stderr || "").trim()
+            await reply(panel("UPDATE", `> git pull OK${salida ? `\n> ${salida.slice(0, 500).replace(/\n/g, "\n> ")}` : "\n> sin cambios"}`))
+          } catch (e) {
+            await reply(`❌ git pull fallo:\n${String(e?.stderr || e?.stdout || e?.message || e).slice(0, 500)}`)
+          }
+          break
+
         case "logout":
           if (isGroup) {
             await reply("Este comando se usa por privado")
