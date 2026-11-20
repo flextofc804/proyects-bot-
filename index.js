@@ -2461,12 +2461,51 @@ async function startBot(opts = {}) {
           await reply("Mensaje de reclamo eliminado")
           break
 
+case "mp3":
+case "ytmp3":
+  if (!text) {
+    await reply("Usa /ytmp3 + link o nombre")
+    return
+  }
+  try {
+    reaccionar(sock, from, msg, ["\u23f3"]).catch(() => {})
+    const ytCobalt = await import("./yt-cobalt.js")
+    const resultado = await ytCobalt.descargarYtCobalt("audio", text, `zenith_mp3_${Date.now()}`)
+    if (resultado.videoId) {
+      try {
+        await enviarPortada(sock, from, msg, { videoId: resultado.videoId, titulo: resultado.title, canal: "", visitas: null, duracion: 0, miniatura: "" }, "audio")
+      } catch {}
+    }
+    const audioBuffer = fs.readFileSync(resultado.file)
+    if (audioBuffer.length > 20 * 1024 * 1024) {
+      await sock.sendMessage(
+        from,
+        { document: audioBuffer, mimetype: "audio/mpeg", fileName: `erzabot_audio.mp3`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Audio largo enviado como documento" },
+        { quoted: msg }
+      )
+    } else {
+      await sock.sendMessage(
+        from,
+        { audio: audioBuffer, mimetype: resultado.mimeType || "audio/mpeg", ptt: false },
+        { quoted: msg }
+      )
+    }
+    reaccionar(sock, from, msg, ["✅"]).catch(() => {})
+    removeFile(resultado.file)
+  } catch (e) {
+    console.error("Error en ytmp3:", String(e?.message || e))
+    if (String(e?.message || e) === "AGE_RESTRICTED") {
+      await reply("Ese video tiene restricción de edad, probá con otro video")
+    } else {
+      await reply("Error al descargar, intenta con otro video")
+    }
+  }
+  break
+
 case "play":
         case "yt":
         case "ytaudio":
         case "playaudio":
-        case "mp3":
-        case "ytmp3":
         case "audio":
         case "song":
           if (!text) {
@@ -2529,8 +2568,53 @@ case "play":
           break
           
 case "mp4":
-case "playvideo":
 case "ytmp4":
+  if (!text) {
+    await reply("Usa /ytmp4 + link o nombre")
+    return
+  }
+  try {
+    reaccionar(sock, from, msg, ["\u23f3"]).catch(() => {})
+    const ytCobalt = await import("./yt-cobalt.js")
+    const resultado = await ytCobalt.descargarYtCobalt("video", text, `zenith_mp4_${Date.now()}`)
+    if (resultado.videoId) {
+      try {
+        await enviarPortada(sock, from, msg, { videoId: resultado.videoId, titulo: resultado.title, canal: "", visitas: null, duracion: 0, miniatura: "" }, "video")
+      } catch {}
+    }
+    const videoSize = fs.statSync(resultado.file).size
+    const sendVideoDocumento = () =>
+      sock.sendMessage(
+        from,
+        { document: { url: resultado.file }, mimetype: "video/mp4", fileName: `erzabot_video${String(path.extname(resultado.file) || ".mp4")}`, caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video pesado enviado como documento" },
+        { quoted: msg }
+      )
+    if (videoSize > 50 * 1024 * 1024) {
+      await sendVideoDocumento()
+    } else {
+      try {
+        await sock.sendMessage(
+          from,
+          { video: { url: resultado.file }, mimetype: resultado.mimeType || "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Video" },
+          { quoted: msg }
+        )
+      } catch {
+        await sendVideoDocumento()
+      }
+    }
+    reaccionar(sock, from, msg, ["✅"]).catch(() => {})
+    removeFile(resultado.file)
+  } catch (e) {
+    console.error("Error en ytmp4:", String(e?.message || e))
+    if (String(e?.message || e) === "AGE_RESTRICTED") {
+      await reply("Ese video tiene restricción de edad, probá con otro video")
+    } else {
+      await reply("Error al descargar, intenta con otro video")
+    }
+  }
+  break
+
+case "playvideo":
 case "play2":
 case "video":
   if (!text) {
