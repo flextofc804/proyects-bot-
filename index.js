@@ -2555,6 +2555,8 @@ case "play":
               await reply("⚠️ El servidor de descargas tiene la IP temporal bloqueada por YouTube.\n\nProbá de nuevo en 1-2 minutos.")
             } else if (/restriccion de edad|inicio de sesion|anti-bot/i.test(reason)) {
               await reply("⚠️ Ese video tiene restriccón de edad o verificación anti-bot de YouTube.\n\nIntenté varias veces. Probá con otro video o de nuevo en unos minutos.")
+            } else if (/401|DL_KEY/i.test(reason)) {
+              await reply("🔑 La clave de descarga del API está desactualizada.\n\nEl dueño debe actualizar la DL_KEY en Vercel o la línea 3 de zeta-core.txt en el host.")
             } else if (reason.includes("aborted due to timeout") || /timeout of \d+ms/i.test(reason)) {
               await reply("⏳ La API tardó demasiado en procesar el video (60 segundos).\n\nProbá de nuevo en unos minutos.")
             } else {
@@ -2663,6 +2665,8 @@ case "video":
       await reply("⚠️ El servidor de descargas tiene la IP temporal bloqueada por YouTube.\n\nProbá de nuevo en 1-2 minutos.")
     } else if (/restriccion de edad|inicio de sesion|anti-bot/i.test(reason)) {
       await reply("⚠️ Ese video tiene restricción de edad o verificación anti-bot de YouTube.\n\nIntenté varias veces. Probá con otro video o de nuevo en unos minutos.")
+    } else if (/401|DL_KEY/i.test(reason)) {
+      await reply("🔑 La clave de descarga del API está desactualizada.\n\nEl dueño debe actualizar la DL_KEY en Vercel o la línea 3 de zeta-core.txt en el host.")
     } else if (reason.includes("aborted due to timeout") || /timeout of \d+ms/i.test(reason)) {
       await reply("⏳ La API tardó demasiado en procesar el video (60 segundos).\n\nProbá de nuevo en unos minutos.")
     } else {
