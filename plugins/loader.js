@@ -19,7 +19,8 @@ async function cargarPlugins() {
       try {
         const mod = await import(pathToFileURL(archivo).href)
         const plugin = mod?.default
-        if (!plugin || !Array.isArray(plugin.comandos) || !plugin.comandos.length || typeof plugin.ejecutar !== "function") {
+        if (!plugin) continue
+        if (!Array.isArray(plugin.comandos) || !plugin.comandos.length || typeof plugin.ejecutar !== "function") {
           console.error(`[PLUGINS] ${categoria}/${nombre} ignorado (falta default con comandos[] y ejecutar())`)
           continue
         }
