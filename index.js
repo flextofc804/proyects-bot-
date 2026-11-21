@@ -21,6 +21,7 @@ import ffmpeg from 'ffmpeg-static'
 import { menuOrder, menuAliases, menuCategories } from "./menus.js"
 import { OWNER_NUMERO, OWNER_NUMERO_JID } from "./config.js"
 import { comandosPlugins, ejecutarPlugin } from "./plugins/loader.js"
+import { personajesGacha } from "./plugins/gacha/personajes.js"
 const execAsync = promisify(exec)
 
 let sharpLib
@@ -472,28 +473,7 @@ const nsfwActions = {
   yuri: { text: "tiene sexo lésbico con", gif: "yuri" }
 }
 
-const gachaCharacters = [
-  { name: "Miku Nakano", series: "Quintessential Quintuplets", rarity: "SSR", value: 5000 },
-  { name: "Rem", series: "Re:Zero", rarity: "SSR", value: 4800 },
-  { name: "Holo", series: "Spice and Wolf", rarity: "SSR", value: 4500 },
-  { name: "Mai Sakurajima", series: "Rascal Does Not Dream", rarity: "SSR", value: 5200 },
-  { name: "Chizuru Ichinose", series: "Rent a Girlfriend", rarity: "SR", value: 2500 },
-  { name: "Zero Two", series: "Darling in the Franxx", rarity: "SR", value: 2800 },
-  { name: "Asuna Yuuki", series: "Sword Art Online", rarity: "SR", value: 3000 },
-  { name: "Mikasa Ackerman", series: "Attack on Titan", rarity: "SR", value: 2700 },
-  { name: "Nezuko Kamado", series: "Demon Slayer", rarity: "SR", value: 2900 },
-  { name: "Nino Nakano", series: "Quintessential Quintuplets", rarity: "R", value: 1200 },
-  { name: "Ichika Nakano", series: "Quintessential Quintuplets", rarity: "R", value: 1100 },
-  { name: "Itsuki Nakano", series: "Quintessential Quintuplets", rarity: "R", value: 1150 },
-  { name: "Yotsuba Nakano", series: "Quintessential Quintuplets", rarity: "R", value: 1180 },
-  { name: "Emilia", series: "Re:Zero", rarity: "R", value: 1300 },
-  { name: "Ram", series: "Re:Zero", rarity: "R", value: 1250 },
-  { name: "Senjougahara Hitagi", series: "Monogatari", rarity: "SSR", value: 5500 },
-  { name: "Shinobu Oshino", series: "Monogatari", rarity: "SR", value: 3200 },
-  { name: "Hanekawa Tsubasa", series: "Monogatari", rarity: "R", value: 1400 },
-  { name: "Kanbaru Suruga", series: "Monogatari", rarity: "R", value: 1350 },
-  { name: "Sengoku Nadeko", series: "Monogatari", rarity: "R", value: 1280 }
-]
+const gachaCharacters = [...personajesGacha]
 
 function getUserEconomy(userId) {
   if (!db.economy[userId]) {
@@ -546,7 +526,7 @@ function formatCoins(amount) {
 }
 
 function getRarityColor(rarity) {
-  const colors = { SSR: "🔴", SR: "🟡", R: "🟢", N: "⚪" }
+  const colors = { SSR: "🔴", SR: "🟡", R: "🟢", N: "⚪", Comun: "⚪", Raro: "🔵", Epico: "🟣", Legendario: "🌟" }
   return colors[rarity] || "⚪"
 }
 
@@ -2143,6 +2123,7 @@ async function startBot(opts = {}) {
 
         case "rollwaifu":
         case "rw":
+        case "wr":
         case "roll":
           if (!isGroup) {
             await reply("Este comando solo funciona en grupos")
@@ -2164,17 +2145,36 @@ async function startBot(opts = {}) {
           }
           const rand = Math.random()
           let rarity
-          if (rand < 0.05) rarity = "SSR"
-          else if (rand < 0.25) rarity = "SR"
-          else rarity = "R"
-          const chars = gachaCharacters.filter(c => c.rarity === rarity)
+          if (rand < 0.05) rarity = "Legendario"
+          else if (rand < 0.15) rarity = "Epico"
+          else if (rand < 0.40) rarity = "Raro"
+          else rarity = "Comun"
+          let rarityAlias = rarity
+          if (rarity === "Legendario") rarityAlias = "SSR"
+          else if (rarity === "Epico") rarityAlias = "SR"
+          else if (rarity === "Raro" || rarity === "Comun") rarityAlias = "R"
+          const chars = gachaCharacters.filter(c => c.rarity === rarity || c.rarity === rarityAlias)
+          if (chars.length === 0) {
+            await reply(`${panel(`GACHA`, `> No hay personajes de rareza ${rarity}\n> Probá de nuevo`)}`)
+            return
+          }
           const character = chars[Math.floor(Math.random() * chars.length)]
           const claimId = Date.now().toString()
           if (!db.settings.pendingClaims) db.settings.pendingClaims = {}
           db.settings.pendingClaims[from] = { character, claimId, timestamp: rollNow }
           gachaUser.lastRoll = rollNow
           saveDB()
-          await reply(`${panel(`GACHA ROLL`, `> Nombre: ${character.name}\n> Serie: ${character.series}\n> Rareza: ${getRarityColor(character.rarity)} ${character.rarity}\n> Valor: ${formatCoins(character.value)} coins`)}\n\nEscribe #claim para reclamarla`)
+          const rollCaption = `✧﹒˚﹒﹒˚﹒✧
+🎴 ¡Salio un personaje para reclamar!
+> 👤 Nombre: ${character.nombre || character.name}
+> ⭐ Rareza: ${character.rareza || character.rarity}
+> ⚡ Poder: ${character.poder || "???"}
+> 💥 Daño: ${character.dano ?? character.value ?? "?"}
+> 🪙 Costo: ${character.costo ?? character.value ?? "?"} monedas
+> 🎲 Probabilidad: ${character.probabilidad || "??"}
+✍️ Para reclamarlo escribi .c
+✧﹒˚﹒﹒˚﹒✧`
+          await sock.sendMessage(from, { image: { url: character.foto }, caption: rollCaption }, { quoted: msg })
           break
 
         case "claim":
@@ -2185,7 +2185,7 @@ async function startBot(opts = {}) {
             return
           }
           if (!db.settings.pendingClaims?.[from]) {
-            await reply("No hay personaje para reclamar")
+            await reply("Primero tira con .wr")
             return
           }
           const pending = db.settings.pendingClaims[from]
@@ -2193,6 +2193,10 @@ async function startBot(opts = {}) {
             delete db.settings.pendingClaims[from]
             saveDB()
             await reply("El tiempo para reclamar expiró")
+            return
+          }
+          if (pending.resolution) {
+            await reply("Ya fue reclamado")
             return
           }
           const claimUser = getUserGacha(sender)
@@ -2203,13 +2207,17 @@ async function startBot(opts = {}) {
           }
           claimUser.characters.push({ ...pending.character, claimedAt: Date.now() })
           claimUser.claims++
-          delete db.settings.pendingClaims[from]
+          pending.resolution = { by: sender, ts: Date.now() }
           addXP(sender, 20)
           saveDB()
-          await reply(`${panel(`PERSONAJE RECLAMADO`, `> ${pending.character.name}\n> ${pending.character.series}\n> ${getRarityColor(pending.character.rarity)} ${pending.character.rarity}\n> Total en harem: ${claimUser.characters.length}`)}`)
+          const reclamoNombre = pending.character.nombre || pending.character.name
+          const reclamoRareza = pending.character.rareza || pending.character.rarity
+          const reclamoProb = pending.character.probabilidad || ""
+          const senderNum = String(sender).split("@")[0].replace(/:.*$/, "")
+          await replyWithMention(`✅ @${senderNum} reclamo a ${reclamoNombre} (${reclamoRareza}) ¡Te toco ${reclamoProb}!`, [sender])
           break
 
-        case "harem":
+
         case "waifus":
         case "claims":
           const haremTarget = mentioned.length > 0 ? mentioned[0] : sender

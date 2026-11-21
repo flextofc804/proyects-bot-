@@ -114,8 +114,8 @@ const menuCategories = {
       {
         title: "🎰 JUGAR",
         items: [
-          { cmd: "rollwaifu", desc: "tirar el gacha" },
-          { cmd: "claim", desc: "reclamar el personaje" },
+          { cmd: "wr", desc: "tirar el gacha (persona aleatorio)" },
+          { cmd: "c", desc: "reclamar el personaje que salio" },
           { cmd: "harem", desc: "ver tu colección" }
         ]
       },
