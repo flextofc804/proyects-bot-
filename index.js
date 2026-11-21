@@ -19,6 +19,7 @@ import axios from "axios"
 import play from 'play-dl'
 import ffmpeg from 'ffmpeg-static'
 import { menuOrder, menuAliases, menuCategories } from "./menus.js"
+import { OWNER_NUMERO, OWNER_NUMERO_JID } from "./config.js"
 import { comandosPlugins, ejecutarPlugin } from "./plugins/loader.js"
 const execAsync = promisify(exec)
 
@@ -376,7 +377,7 @@ const config = {
   botName: "⋆ ୲୳ ⋆ EʀᴢᴀBᴏᴛ-MD/OFC ⋆ ୲୳ ⋆",
   prefix: "#",
   owner: "Dueño",
-  ownerNumber: "5491127289595@s.whatsapp.net",
+  ownerNumber: OWNER_NUMERO_JID,
   sessionName: "zenith_session",
   database: "database.json"
 }
@@ -950,17 +951,62 @@ function jidANumero(j) {
   return numeroLimpioSub(String(j || "").replace(/^@/, "").split("@")[0].split(":")[0])
 }
 
+function mapaLidPersistente() {
+  try {
+    if (!db.settings.mapLid) db.settings.mapLid = {}
+  } catch {}
+  return db?.settings?.mapLid || {}
+}
+
+function guardarLidAPn(lidNum, pn) {
+  if (!lidNum || !pn || !/^\d{8,13}$/.test(pn) || lidNum === pn) return
+  const mapa = mapaLidPersistente()
+  if (mapa[lidNum] === pn) return
+  mapa[lidNum] = pn
+  try { saveDB() } catch {}
+}
+
+function registrarMapeoLid(msg, sender) {
+  // WhatsApp manda cada vez mas remitentes como @lid: cada mensaje que traiga una alternativa
+  // con el numero real (participantPn/participantAlt/remoteJidAlt) queda guardado en database.json
+  try {
+    if (typeof sender !== "string" || !sender.endsWith("@lid")) return
+    const lidNum = sender.split("@")[0].split(":")[0]
+    if (!lidNum) return
+    const alternativas = [msg?.key?.participantPn, msg?.key?.participantAlt, msg?.key?.remoteJidAlt]
+    for (const jid of alternativas) {
+      const pn = jidANumero(jid)
+      if (pn && pn !== lidNum) {
+        guardarLidAPn(lidNum, pn)
+        return
+      }
+    }
+  } catch {}
+}
+
 async function numeroRealDelSender(sock, from, isGroup, sender, msg) {
-  // WhatsApp manda cada vez mas remitentes como @lid (no phone number): resolvemos el numero real
   if (typeof sender !== "string" || !sender.endsWith("@lid")) return ""
-  if (!isGroup) return jidANumero(msg?.key?.remoteJidAlt || "")
+  const lidNum = sender.split("@")[0].split(":")[0]
+  const guardado = mapaLidPersistente()[lidNum]
+  if (guardado) return guardado
+  if (!isGroup) return registrarYDevolver(lidNum, jidANumero(msg?.key?.remoteJidAlt || ""))
   try {
     const meta = await getGroupMeta(sock, from)
+    for (const part of meta?.participants || []) {
+      const pnParticipante = jidANumero(part?.phoneNumber || "")
+      const idLid = String(part?.id || "")
+      if (pnParticipante && idLid.endsWith("@lid")) guardarLidAPn(idLid.split("@")[0].split(":")[0], pnParticipante)
+    }
     const variante = jidVariantSet([sender])
     const p = (meta?.participants || []).find((part) => jidInVariants(part.id, variante))
-    return jidANumero(p?.phoneNumber || "")
+    return registrarYDevolver(lidNum, jidANumero(p?.phoneNumber || ""))
   } catch {}
   return ""
+}
+
+function registrarYDevolver(lidNum, pn) {
+  if (pn && pn !== lidNum) guardarLidAPn(lidNum, pn)
+  return pn || ""
 }
 
 function sesionSubRegistrada(dir) {
@@ -1327,11 +1373,12 @@ async function startBot(opts = {}) {
     const cleanSenderNum = senderNumber.replace(/[^0-9]/g, "")
     const configuredOwners = Array.isArray(db?.settings?.owners) ? db.settings.owners : []
     const ownerNumbers = new Set(
-      [cleanOwnerNum, "5491127289595", botNumber, ...configuredOwners]
+      [cleanOwnerNum, OWNER_NUMERO, botNumber, ...configuredOwners]
         .filter((value) => typeof value === "string" || typeof value === "number")
         .map((value) => String(value).replace(/[^0-9]/g, ""))
         .filter(Boolean)
     )
+    registrarMapeoLid(msg, sender)
     const numRealSender = sender.endsWith("@lid") && !ownerNumbers.has(cleanSenderNum)
       ? await numeroRealDelSender(sock, from, isGroup, sender, msg)
       : ""
@@ -3605,11 +3652,15 @@ case "video":
             return
           }
           await reply("⏳ Ejecutando git pull...")
+          const cwdBot = path.dirname(fileURLToPath(import.meta.url))
           try {
-            const { stdout, stderr } = await execAsync("git pull", { cwd: path.dirname(fileURLToPath(import.meta.url)), timeout: 60000 })
+            await execAsync("git stash push -q -- database.json || true", { cwd: cwdBot, timeout: 30000 })
+            const { stdout, stderr } = await execAsync("git pull", { cwd: cwdBot, timeout: 60000 })
+            await execAsync("git stash pop -q || true", { cwd: cwdBot, timeout: 30000 }).catch(() => {})
             const salida = String(stdout || stderr || "").trim()
             await reply(panel("UPDATE", `> git pull OK${salida ? `\n> ${salida.slice(0, 500).replace(/\n/g, "\n> ")}` : "\n> sin cambios"}`))
           } catch (e) {
+            await execAsync("git stash pop -q || true", { cwd: cwdBot, timeout: 30000 }).catch(() => {})
             await reply(`❌ git pull fallo:\n${String(e?.stderr || e?.stdout || e?.message || e).slice(0, 500)}`)
           }
           break
