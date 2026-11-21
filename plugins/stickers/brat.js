@@ -78,7 +78,13 @@ export default {
   ejecutar: async (ctx) => {
     const texto = String(ctx.text || "").trim().slice(0, 300)
     if (!texto) {
-      await ctx.reply("Uso: .brat <texto> (ej: .brat sapeee)")
+      await ctx.reply([
+        "✧﹒˚﹒﹒˚﹒✧",
+        "✿ 𝘣𝘳𝘢𝘵 ✿",
+        "escribe .brat + tu texto ✎",
+        "✦ ejemplo: .brat sapeee ✦",
+        "✧﹒˚﹒﹒˚﹒✧"
+      ].join("\n"))
       return
     }
     await ctx.reaccionar(["🖼️"])
