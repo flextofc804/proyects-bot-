@@ -79,6 +79,7 @@ const menuCategories = {
         title: "🖌️ CREAR",
         items: [
           { cmd: "sticker", desc: "imagen o video a sticker" },
+          { cmd: "brat", desc: "sticker de texto estilo brat" },
           { cmd: "newpack", desc: "crear un pack nuevo" },
           { cmd: "stickeradd", desc: "añadir sticker a un pack" },
           { cmd: "stickerdel", desc: "quitar sticker de un pack" }

@@ -19,6 +19,7 @@ import axios from "axios"
 import play from 'play-dl'
 import ffmpeg from 'ffmpeg-static'
 import { menuOrder, menuAliases, menuCategories } from "./menus.js"
+import { comandosPlugins, ejecutarPlugin } from "./plugins/loader.js"
 const execAsync = promisify(exec)
 
 let sharpLib
@@ -916,6 +917,7 @@ const COMANDOS_VALIDOS = (() => {
     const fuente = fs.readFileSync(fileURLToPath(import.meta.url), "utf8")
     for (const m of fuente.matchAll(/case "([a-zA-Z0-9_.-]+)":/g)) setCmd.add(m[1].toLowerCase())
   } catch {}
+  for (const c of comandosPlugins()) setCmd.add(c)
   return setCmd
 })()
 
@@ -1445,6 +1447,8 @@ async function startBot(opts = {}) {
         await reply("Propuesta rechazada")
         return
       }
+
+      if (await ejecutarPlugin({ sock, from, msg, command, text, args, reply, sender, senderNumber, isOwner, isGroup, reaccionar: (emojis) => reaccionar(sock, from, msg, Array.isArray(emojis) ? emojis : [emojis]) })) return
 
       switch (command) {
         case "menu":
