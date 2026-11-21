@@ -82,7 +82,7 @@ export default {
         "✧﹒˚﹒﹒˚﹒✧",
         "✿ 𝘣𝘳𝘢𝘵 ✿",
         "escribe .brat + tu texto ✎",
-        "✦ ejemplo: .brat sapeee ✦",
+        "✦ ejemplo: .brat ErzaBot-MD ✦",
         "✧﹒˚﹒﹒˚﹒✧"
       ].join("\n"))
       return
