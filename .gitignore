@@ -9,3 +9,4 @@ zenith-api/cookies.txt
 cookies.txt
 *.session
 session/
+plugins/gacha/tiradas.json

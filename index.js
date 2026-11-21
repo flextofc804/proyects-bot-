@@ -556,13 +556,43 @@ function borderBottom() {
   return "╰━━━━━━━━━━━━━━━━━━━━━━━━━╯"
 }
 
+function formatearUptime() {
+  const total = Math.max(0, Math.floor(process.uptime()))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  return `${h}h ${m}m ${s}s`
+}
+
+function fechaHoraArgentina() {
+  try {
+    return new Intl.DateTimeFormat("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date())
+  } catch {
+    return new Date().toLocaleString("es-AR")
+  }
+}
+
+function contarUsuariosBot() {
+  const setUsuarios = new Set()
+  for (const coleccion of [db.economy, db.gacha, db.profiles, db.levels]) {
+    for (const jid of Object.keys(coleccion || {})) setUsuarios.add(String(jid).split("@")[0].split(":")[0])
+  }
+  setUsuarios.delete("")
+  return setUsuarios.size
+}
+
+const PREFIJOS_BOT = ["#", "$", "%", "&", "/", ".", "!", "?", "\u00a1"]
+
 function renderMenuHome() {
   const lines = []
   lines.push("╭───────────────────────╮")
   lines.push("  ⋆ ୨୧ ⋆ *EʀᴢᴀBᴏᴛ-MD/OFC* ⋆ ୨୧ ⋆")
   lines.push("╰───────────────────────╯")
-  lines.push(`⌁ Prefix » *${config.prefix}*  ⌁ Owner » *+5491127289595*`)
+  lines.push(`⌁ Prefijos » *${PREFIJOS_BOT.join(" ")}*`)
+  lines.push(`⌁ Owner » *wa.me/${OWNER_NUMERO}*`)
   lines.push(`⌁ Comandos » *${countAllCommands()}*  ⌁ Categorías » *${menuOrder.length}*`)
+  lines.push(`⌁ Activo » *${formatearUptime()}*  ⌁ Usuarios » *${contarUsuariosBot()}*`)
+  lines.push(`⌁ Hora » *${fechaHoraArgentina()}* (Argentina)`)
   lines.push("")
   lines.push("╭─〔 ❖ *CATEGORÍAS* 〕")
   for (const key of menuOrder) {
@@ -1322,7 +1352,7 @@ async function startBot(opts = {}) {
     if (!body && msg.message.templateButtonReplyMessage) {
       body = msg.message.templateButtonReplyMessage.selectedId || ""
     }
-    const PREFIXES = ["#", "$", "%", "&", "/", ".", "!", "?", "¡"]
+    const PREFIXES = PREFIJOS_BOT
     const prefixUsado = body ? PREFIXES.find((p) => body.startsWith(p)) : null
     if (!body || !prefixUsado) return
 
