@@ -1191,11 +1191,21 @@ async function zetaCoreFacebook(url, prefix) {
     const data = await zetaCoreJson("/facebook", new URLSearchParams({ query: url }))
     const direct = zetaCorePickMedia(data)
     if (!direct) throw new Error("el video no tiene fuente descargable")
+    // el enlace de /facebook suele ser lookaside.fbsbx.com que responde HTML de
+    // redireccion, no el video: en ese caso no se descarga, se reintenta /dl
+    const esLookaside = /lookaside\.fbsbx\.com/i.test(String(direct))
+    if (!esLookaside) {
+      try {
+        return await zetaCoreSaveFile(String(direct), prefix, "video")
+      } catch {
+        if (dlMsg.includes("falta la clave")) throw dlError
+      }
+    }
     try {
-      return await zetaCoreSaveFile(String(direct), prefix, "video")
+      return await zetaCoreDlRetry(url, "facebook", prefix)
     } catch {
       if (dlMsg.includes("falta la clave")) throw dlError
-      throw new Error("el video no tiene fuente descargable")
+      throw dlError
     }
   }
 }
