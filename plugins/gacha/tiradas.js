@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import { personajesGacha } from "./personajes.js"
+import { imagenTransformada, transformacionDe } from "./transformaciones.js"
 
 const ARCHIVO = path.join(path.dirname(fileURLToPath(import.meta.url)), "tiradas.json")
 
@@ -119,6 +120,7 @@ export function tirar(jid, rand = Math.random) {
   return {
     tirada: s.tiradas,
     personaje: personaje.nombre,
+    pj: personaje,
     rareza: RAREZAS[elegido].nombre,
     suerte,
     probabilidad: probAhora,
@@ -131,13 +133,30 @@ export default {
   ayuda: ".gacha — tira un personaje con el sistema de 17 rarezas",
   ejecutar: async (ctx) => {
     const r = tirar(ctx.sender || ctx.senderNumber || "anon")
-    await ctx.reply(
+    const caption =
       `🎲 Tirada #${r.tirada}\n` +
-      `Personaje: ${r.personaje}\n` +
+      `Personaje: ${r.pj.nombre}\n` +
       `Rareza: ${r.rareza}\n` +
       `¿Tirada de suerte?: ${r.suerte ? "Sí" : "No"}\n` +
       `Probabilidad actual de esa rareza: ${r.probabilidad.toFixed(2)}%\n` +
-      `Racha mala: ${r.racha}/10 para subir la suerte`
-    )
+      `Racha mala: ${r.racha}/10 para subir la suerte\n` +
+      `🖼️ Imagen: ${transformacionDe(r.pj.nombre, r.rareza, r.pj.poder)}`
+    let imagenOk = false
+    try {
+      const resp = await fetch(r.pj.foto, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(20000) })
+      if (!resp.ok) throw new Error(`foto ${resp.status}`)
+      const buf = await imagenTransformada(Buffer.from(await resp.arrayBuffer()), r.rareza)
+      await ctx.sock.sendMessage(ctx.from, { image: buf, caption }, { quoted: ctx.msg })
+      imagenOk = true
+    } catch (e) {
+      console.log(`[GACHA] imagen transformada falla: ${String(e?.message || e).slice(0, 80)}`)
+    }
+    if (!imagenOk) {
+      try {
+        await ctx.sock.sendMessage(ctx.from, { image: { url: r.pj.foto }, caption }, { quoted: ctx.msg })
+      } catch (e2) {
+        await ctx.reply(caption)
+      }
+    }
   }
 }
