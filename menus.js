@@ -114,8 +114,9 @@ const menuCategories = {
       {
         title: "🎰 JUGAR",
         items: [
-          { cmd: "wr", desc: "tirar el gacha (persona aleatorio)" },
+          { cmd: "wr", desc: "tirar el gacha (personaje aleatorio)" },
           { cmd: "c", desc: "reclamar el personaje que salio" },
+          { cmd: "gacha", desc: "gacha de 17 rarezas con suerte y pity" },
           { cmd: "harem", desc: "ver tu colección" }
         ]
       },
