@@ -21,6 +21,19 @@ const PIEZO = "⚔️"
 const CORAZON = "❤️‍🔥"
 const ROJO = "🔴"
 
+// ============================================================
+// MODO FLOW FULL-SCREEN (experimental, estilo WaBot de las capturas)
+// La pantalla completa nativa (pestañas + buscador de WhatsApp Flows)
+// renderiza un Flow publicado en una cuenta WhatsApp Business (WABA):
+// un número MD normal no puede bajar esa pantalla por sí solo.
+// Si tenés un Flow propio, poné su ID acá (modo published):
+//   const ERZA_FLOW_ID = "1307913409923914"
+// Vacío = payload comunitario de prueba (flow_id 1, mode draft) para
+// TESTEAR si tu cliente de WhatsApp lo renderiza igual.
+// ============================================================
+const ERZA_FLOW_URL = ""
+const ERZA_FLOW_ID = ""
+
 // Pestañas del Flow (cada una abre una tarjeta aparte con sus comandos)
 const TABS = [
   { key: "subbots", label: "⚔️ Subbots" },
@@ -72,6 +85,8 @@ function textoMenu() {
   L.push(`│ ${CORAZON} *PANEL PRIVADO DE PRUEBAS*`)
   L.push(`│ ${ROJO} Solo el owner puede abrirlo`)
   L.push("│")
+  L.push("│ Elige una categoría, busca o toca un comando...")
+  L.push("│")
   L.push(`├ 🔍 *BUSCADOR* ─ tocá “Buscar comando...”`)
   L.push("│")
   for (const key of menuOrder) {
@@ -119,6 +134,110 @@ function seccionesBuscador() {
   })
 }
 
+// ============================================================
+// FLOW FULL-SCREEN EXPERIMENTAL (botón galaxy_message)
+// Manda los datos del menú (pestañas + comandos) como payload del Flow
+// para testear si tu cliente de WhatsApp los renderiza en pantalla completa
+// ============================================================
+function datosGalaxy(key) {
+  const cat = key && menuCategories[key] ? menuCategories[key] : null
+  return {
+    titulo: `${PIEZO} ErzaBot`,
+    subtitulo: "Elige una categoría, busca o toca un comando para ver los detalles",
+    color: "#E53935",
+    activos: [".code", ".setprefix", ".bot", ".play"],
+    categoria_actual: cat ? cat.title : "",
+    pestañas: menuOrder.map((k) => ({
+      id: `.erzabot ${k}`,
+      label: `${menuCategories[k].emoji} ${menuCategories[k].title}`
+    })),
+    categorías: menuOrder.map((k) => ({
+      key: k,
+      emoji: menuCategories[k].emoji,
+      title: menuCategories[k].title,
+      comandos: (menuCategories[k].sections || []).flatMap((s) =>
+        (s.items || []).map((i) => ({ cmd: `.${i.cmd}`, desc: i.desc || s.title || "" }))
+      )
+    })),
+    accion_rapida: ACCIONES.map((a) => ({ id: a.id, texto: a.display_text }))
+  }
+}
+
+function botonesGalaxy(key) {
+  const galaxy = {
+    mode: ERZA_FLOW_ID ? "published" : "draft",
+    flow_message_version: "3",
+    flow_token: `erza-test-${Date.now()}`,
+    flow_id: ERZA_FLOW_ID || "1",
+    flow_cta: `${PIEZO} Abrir menú ErzaBot`,
+    flow_action: "navigate",
+    flow_action_payload: {
+      screen: key && menuCategories[key] ? `ERZA_${String(key).toUpperCase()}` : "ERZA_MENU",
+      data: datosGalaxy(key)
+    }
+  }
+  if (ERZA_FLOW_URL && /^https?:\/\//i.test(ERZA_FLOW_URL)) galaxy.flow_url = ERZA_FLOW_URL
+  return [
+    { name: "galaxy_message", buttonParamsJson: JSON.stringify(galaxy) },
+    ...ACCIONES.map((a) => ({ name: "quick_reply", buttonParamsJson: JSON.stringify(a) })),
+    { name: "quick_reply", buttonParamsJson: JSON.stringify({ id: ".erzabot", display_text: `${ROJO} ← Volver al inicio` }) }
+  ]
+}
+async function mandarFlowGalaxy(ctx, key) {
+  const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = await import("@whiskeysockets/baileys")
+  const { sock, from, msg } = ctx
+  const banner = bannerResuelto()
+  let media = null
+  if (banner) {
+    try {
+      media = await prepareWAMessageMedia({ image: { url: banner } }, { upload: sock.waUploadToServer })
+    } catch {}
+  }
+  const cat = key && menuCategories[key] ? menuCategories[key] : null
+  const texto = cat
+    ? `${PIEZO} *EᴢᴀBᴏᴛ* \u0020• ${cat.emoji} ${cat.title}\n\nElige un comando, busca o volvé al inicio 👇`
+    : `${PIEZO} *EᴢᴀBᴏᴛ*\n\nElige una categoría, busca o toca un comando...`
+  const message = generateWAMessageFromContent(
+    from,
+    {
+      viewOnceMessage: {
+        message: {
+          messageContextInfo: { deviceListMetadata: {}, deviceListMetadataVersion: 2 },
+          interactiveMessage: proto.Message.InteractiveMessage.create({
+            header: proto.Message.InteractiveMessage.Header.create({
+              title: `${PIEZO} ErzaBot`,
+              ...(media?.imageMessage ? { imageMessage: media.imageMessage } : {}),
+              hasMediaAttachment: Boolean(media?.imageMessage)
+            }),
+            body: proto.Message.InteractiveMessage.Body.create({ text: texto }),
+            footer: proto.Message.InteractiveMessage.Footer.create({ text: `${CORAZON} flow full-screen 🧪 ${ROJO} #E53935` }),
+            nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({
+              buttons: botonesGalaxy(key),
+              messageParamsJson: "{}"
+            })
+          })
+        }
+      }
+    },
+    { quoted: msg, userJid: sock.user?.id }
+  )
+  const nodes = [
+    {
+      tag: "biz",
+      attrs: {},
+      content: [
+        {
+          tag: "interactive",
+          attrs: { type: "native_flow", v: "1" },
+          content: [{ tag: "native_flow", attrs: { v: "9", name: "mixed" } }]
+        }
+      ]
+    }
+  ]
+  if (!from.endsWith("@g.us")) nodes.push({ tag: "bot", attrs: { biz_bot: "1" } })
+  await sock.relayMessage(from, message.message, { messageId: message.key.id, additionalNodes: nodes })
+}
+
 function botonesMain() {
   const botones = [
     {
@@ -131,7 +250,11 @@ function botonesMain() {
     ...TABS.map((t) => ({
       name: "quick_reply",
       buttonParamsJson: JSON.stringify({ id: `.erzabot ${t.key}`, display_text: t.label })
-    }))
+    })),
+    {
+      name: "quick_reply",
+      buttonParamsJson: JSON.stringify({ id: ".erzabot flow", display_text: "🧪 Probar Flow full-screen" })
+    }
   ]
   if (URL_EXTRA && /^https?:\/\//i.test(URL_EXTRA)) {
     botones.push({
@@ -152,6 +275,10 @@ function botonesCategoria() {
       })
     },
     ...ACCIONES.map((a) => ({ name: "quick_reply", buttonParamsJson: JSON.stringify(a) })),
+    {
+      name: "quick_reply",
+      buttonParamsJson: JSON.stringify({ id: ".erzabot flow", display_text: "🧪 Probar Flow full-screen" })
+    },
     { name: "quick_reply", buttonParamsJson: JSON.stringify({ id: ".erzabot", display_text: `${ROJO} ← Volver al inicio` }) }
   ]
 }
@@ -179,7 +306,7 @@ async function mandarFlow(ctx, texto, botones) {
               hasMediaAttachment: Boolean(media?.imageMessage)
             }),
             body: proto.Message.InteractiveMessage.Body.create({ text: texto }),
-            footer: proto.Message.InteractiveMessage.Footer.create({ text: `${CORAZON} erza-menu privado ${ROJO} #E53935` }),
+            footer: proto.Message.InteractiveMessage.Footer.create({ text: `${CORAZON} erza-menu privado ${CORAZON} ${ROJO} #E53935` }),
             nativeFlowMessage: proto.Message.InteractiveMessage.NativeFlowMessage.create({ buttons: botones })
           })
         }
@@ -278,9 +405,15 @@ export default {
         guardarOwners(actuales)
       } catch {}
     }
-    const filtro = catDe(ctx.text)
+    const pedido = String(ctx.text || "").trim()
+    const pedidoFlow = /^(flow|pantalla|fullscreen|full\\s?screen|test)$/i.test(pedido)
+    const pedidoFlowCat = /^(flow|pantalla|fullscreen|full\\s?screen|test)\s+(.+)$/i.exec(pedido)
+    const filtro = pedidoFlowCat ? catDe(pedidoFlowCat[2]) : catDe(ctx.text)
     try {
-      if (filtro) {
+      if (pedidoFlow || (filtro && pedidoFlowCat)) {
+        // MODO EXPERIMENTAL: flow full-screen con galaxy_message
+        await mandarFlowGalaxy(ctx, pedidoFlowCat ? filtro : null)
+      } else if (filtro) {
         await mandarFlow(ctx, textoCategoria(filtro), botonesCategoria())
       } else {
         // Mensaje de invitación antes del Flow
