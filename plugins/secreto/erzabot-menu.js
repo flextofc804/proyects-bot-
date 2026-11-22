@@ -8,6 +8,7 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import { menuOrder, menuAliases, menuCategories } from "../../menus.js"
+import { ERZA_CLAVE_MENU } from "../../config.js"
 
 const DIR = path.dirname(fileURLToPath(import.meta.url))
 const BANNER_LOCAL = path.join(DIR, "erza-banner.jpg")
@@ -203,15 +204,79 @@ async function mandarFlow(ctx, texto, botones) {
   await sock.relayMessage(from, message.message, { messageId: message.key.id, additionalNodes: nodes })
 }
 
+// ============================================================
+// Lista de owner persistente del menú: Whatsapp a veces manda los
+// mensajes del dueño como @lid SIN el numero real (en chat privado no
+// siempre es resolvible) y el gate general no lo reconoce. Cuando el
+// owner pasa el gate una vez (o empareja con la clave de config.js) se
+// guardan sus numeros/lids en plugins/secreto/erzabot-owners.json
+// ============================================================
+const ARCHIVO_OWNERS = path.join(DIR, "erzabot-owners.json")
+
+function leerOwners() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(ARCHIVO_OWNERS, "utf8"))
+    return Array.isArray(raw.owners) ? new Set(raw.owners) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+function guardarOwners(setOwners) {
+  fs.writeFileSync(ARCHIVO_OWNERS, JSON.stringify({ owners: [...setOwners] }, null, 2))
+}
+
+function clavesOwnerDeCtx(ctx) {
+  const claves = new Set()
+  const sumar = (jid) => {
+    const n = String(jid || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "")
+    if (n) claves.add(n)
+  }
+  sumar(ctx.senderNumber)
+  sumar(ctx.sender)
+  const key = ctx.msg?.key || {}
+  for (const jid of [key.participant, key.participantAlt, key.participantPn, key.remoteJid, key.remoteJidAlt]) sumar(jid)
+  return claves
+}
+
+function esOwnerErza(ctx) {
+  if (ctx.isOwner) {
+    // aprendido: guardar todas las claves de esta sesión del owner
+    const actuales = leerOwners()
+    const claves = clavesOwnerDeCtx(ctx)
+    const nuevas = [...claves].filter((c) => !actuales.has(c))
+    if (nuevas.length) {
+      for (const c of nuevas) actuales.add(c)
+      try {
+        guardarOwners(actuales)
+      } catch {}
+    }
+    return true
+  }
+  const actuales = leerOwners()
+  for (const c of clavesOwnerDeCtx(ctx)) if (actuales.has(c)) return true
+  return false
+}
+
 export default {
   comandos: ["erzabot"],
   ayuda: "erzabot - menú secreto de pruebas (solo owner)",
   secreto: true,
   ejecutar: async (ctx) => {
-    // SEGURIDAD: solo el owner
-    if (!ctx.isOwner) {
-      await ctx.reply("*Este menú es privado* 🔒")
-      return
+    // SEGURIDAD: solo el owner (con emparejamiento de emergencia por clave)
+    if (!esOwnerErza(ctx)) {
+      const clave = String(ctx.text || "").trim()
+      const claveOk = clave && ERZA_CLAVE_MENU && clave === ERZA_CLAVE_MENU
+      if (!claveOk) {
+        await ctx.reply("*Este menú es privado* 🔒")
+        return
+      }
+      // emparejamiento: la clave coincide, se registran todos los numeros/lids de este chat
+      const actuales = leerOwners()
+      for (const c of clavesOwnerDeCtx(ctx)) actuales.add(c)
+      try {
+        guardarOwners(actuales)
+      } catch {}
     }
     const filtro = catDe(ctx.text)
     try {
