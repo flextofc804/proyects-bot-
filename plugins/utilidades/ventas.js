@@ -16,7 +16,7 @@ const MENU_VENTAS = `┌──「 ✦ VENTAS ✦ 」──
 │  💲 Precio: $24.000 ARS / $15 USD
 │
 ├──〔 💳 PAGOS 〕
-│  💳 PayPal » [TU LINK] - Pagás en USD
+│  💳 PayPal Gmial » [vaselevichenzo410@gmail.com] - Pagás en USD
 │  💳 Mercado Pago » Alias: enzo-vase - Pagás en ARS
 │
 └──〔 📩 COMPRAR 〕
