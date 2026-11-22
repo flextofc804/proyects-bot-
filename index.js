@@ -581,7 +581,15 @@ function contarUsuariosBot() {
   return setUsuarios.size
 }
 
-const PREFIJOS_BOT = ["#", "$", "%", "&", "/", ".", "!", "?", "\u00a1"]
+const PREFIJOS_BASE = ["#", "$", "%", "&", "/", ".", "!", "?", "\u00a1"]
+// prefijos = base + extras guardados desde .setprefix (persistido en db.settings.prefijosExtra)
+function prefijosBotDesdeDb() {
+  const extras = Array.isArray(db?.settings?.prefijosExtra)
+    ? db.settings.prefijosExtra.filter((c) => typeof c === "string" && c.length === 1)
+    : []
+  return [...new Set([...PREFIJOS_BASE, ...extras])]
+}
+const PREFIJOS_BOT = prefijosBotDesdeDb()
 
 function renderMenuHome() {
   const lines = []
@@ -3392,6 +3400,47 @@ case "video":
           saveDB()
           await reply("Género eliminado")
           break
+
+        case "setprefix": {
+          if (!isOwner) {
+            await reply("Solo el owner puede cambiar los prefijos")
+            break
+          }
+          db.settings = db.settings || {}
+          const extras = Array.isArray(db.settings.prefijosExtra) ? [...db.settings.prefijosExtra] : []
+          const sub = String(args[0] || "").toLowerCase()
+          if (sub !== "add" && sub !== "del") {
+            await reply(`Prefijos actuales: ${PREFIJOS_BOT.join(" ")}\nUso: ${config.prefix}setprefix add <caracter> | ${config.prefix}setprefix del <caracter>\nEj: #setprefix add >`)
+            break
+          }
+          const nuevo = String(args[1] || "")
+          if (nuevo.length !== 1) {
+            await reply("Manda un solo caracter, ej: #setprefix add >")
+            break
+          }
+          if (sub === "add") {
+            if (PREFIJOS_BASE.includes(nuevo)) {
+              await reply(`Ese prefijo ya esta por defecto. Actuales: ${PREFIJOS_BOT.join(" ")}`)
+              break
+            }
+            if (!extras.includes(nuevo)) extras.push(nuevo)
+            if (!PREFIJOS_BOT.includes(nuevo)) PREFIJOS_BOT.push(nuevo)
+            db.settings.prefijosExtra = extras
+            saveDB()
+            await reply(`Prefijo *${nuevo}* agregado\nPrefijos: ${PREFIJOS_BOT.join(" ")}`)
+          } else {
+            if (PREFIJOS_BASE.includes(nuevo)) {
+              await reply("El prefijo base no se puede quitar")
+              break
+            }
+            const i = PREFIJOS_BOT.indexOf(nuevo)
+            if (i >= 0) PREFIJOS_BOT.splice(i, 1)
+            db.settings.prefijosExtra = extras.filter((c) => c !== nuevo)
+            saveDB()
+            await reply(`Prefijo *${nuevo}* quitado\nPrefijos: ${PREFIJOS_BOT.join(" ")}`)
+          }
+          break
+        }
 
         case "group":
         case "gp":
