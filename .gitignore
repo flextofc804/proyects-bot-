@@ -10,3 +10,6 @@ cookies.txt
 *.session
 session/
 plugins/gacha/tiradas.json
+
+# dueños autorizados del menú secreto (se genera en el host)
+plugins/secreto/erzabot-owners.json
