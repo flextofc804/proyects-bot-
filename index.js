@@ -454,6 +454,7 @@ function loadDB() {
       saveDB()
     }
   } catch (e) {
+    console.error("[ERZABOT] Error cargando la db:", e?.message || e)
     db = JSON.parse(JSON.stringify(defaultDB))
   }
 }
@@ -461,6 +462,31 @@ function loadDB() {
 function saveDB() {
   fs.writeFileSync(config.database, JSON.stringify(db, null, 2))
 }
+
+// BACKUP AUTOMATICO de la db: cada 6 horas guarda una copia en backups/ y conserva las ultimas 5
+const BACKUP_DIR = "backups"
+function backupDB(auto = false) {
+  try {
+    if (!fs.existsSync(config.database)) return null
+    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true })
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+    const destino = `${BACKUP_DIR}/db-backup-${auto ? "auto" : "manual"}-${stamp}.json`
+    fs.copyFileSync(config.database, destino)
+    const archivos = fs.readdirSync(BACKUP_DIR)
+      .filter((f) => f.startsWith("db-backup-") && f.endsWith(".json"))
+      .sort()
+    while (archivos.length > 5) {
+      const viejo = archivos.shift()
+      fs.unlinkSync(`${BACKUP_DIR}/${viejo}`)
+    }
+    console.log(`[ERZABOT] Backup ${auto ? "automatico" : "manual"} de la db creado (${stamp})`)
+    return destino
+  } catch (e) {
+    console.error("[ERZABOT] Error en backup de la db:", e?.message || e)
+    return null
+  }
+}
+setInterval(() => backupDB(true), 6 * 60 * 60 * 1000)
 
 loadDB()
 
@@ -991,6 +1017,8 @@ const MAX_SUBBOTS = 20
 const CARPETA_SUBBOTS = "subbots"
 let sockPrincipal = null
 const PEDIGO_CODIGO = new Map() // num -> { vence, token, codigo } (pairing unico: un codigo por ventana)
+// Cooldown anti-flood: 2 segundos entre comandos por usuario (los owners no tienen cooldown)
+const COOLDOWN_COMANDOS = new Map()
 const VENTANA_CODIGO_MS = 600000 // ventana de 10 minutos para cada codigo de pairing
 
 function formatearCodigoVinculacion(codigo) {
@@ -1474,6 +1502,18 @@ async function startBot(opts = {}) {
         return false
       }
     }
+
+    // Cooldown anti-flood: maximo un comando cada 2 segundos por usuario (silencioso; owners sin limite)
+    if (command && !isOwner) {
+      const claveCooldown = `${sender}|${command}`
+      const ultimoComando = COOLDOWN_COMANDOS.get(claveCooldown) || 0
+      if (Date.now() - ultimoComando < 2000) return
+      if (COOLDOWN_COMANDOS.size > 5000) COOLDOWN_COMANDOS.clear()
+      COOLDOWN_COMANDOS.set(claveCooldown, Date.now())
+    }
+
+    // Modo privado: si esta activo, solo el owner puede usar comandos (los mensajes normales pasan igual)
+    if (db.settings?.modoPrivado === true && !isOwner) return
 
     try {
       if (command === "trade" && args[0] === "accept") {
@@ -4115,6 +4155,28 @@ case "video":
           await reply("Grupo cerrado")
           break
 
+        case "modo":
+          if (!isOwner) { await reply("Este comando solo lo puede usar el dueño del bot"); return }
+          if (args[0] === "privado" || args[0] === "private" || args[0] === "priv") {
+            db.settings.modoPrivado = true
+            saveDB()
+            await reply("*Modo privado activado* 🔒\nSolo vos podés usar comandos. Para volver: `.modo publico`")
+          } else if (args[0] === "publico" || args[0] === "public" || args[0] === "pub") {
+            db.settings.modoPrivado = false
+            saveDB()
+            await reply("*Modo público activado* 🌐\nTodos pueden usar los comandos.")
+          } else {
+            const modoActual = db.settings?.modoPrivado === true ? "PRIVADO 🔒 (solo vos)" : "PÚBLICO 🌐 (todos)"
+            await reply(`Modo actual: *${modoActual}*\n\nCambiar con:\n• \`.modo privado\` = solo vos\n• \`.modo publico\` = todos`)
+          }
+          break
+
+        case "backup":
+          if (!isOwner) { await reply("Este comando solo lo puede usar el dueño del bot"); return }
+          const backupOk = backupDB(false)
+          await reply(backupOk ? `✅ Backup de la db creado en *${backupOk}*` : "❌ No se pudo crear el backup")
+          break
+
         case "antilink":
         case "antienlace":
           if (!isGroup) {
@@ -4486,6 +4548,19 @@ case "video":
             .replace(/{grupo}/g, meta.subject)
             .replace(/{user}/g, userTag)
             .replace(/{group}/g, meta.subject)
+          // intenta mandar la bienvenida con la foto de perfil de quien entra; si no tiene foto o falla, texto plano
+          let pfUrlBienvenida = null
+          try {
+            pfUrlBienvenida = await sock.profilePictureUrl(participant, "image")
+          } catch { /* sin foto de perfil, sigue al texto */ }
+          if (pfUrlBienvenida) {
+            try {
+              await sock.sendMessage(id, { image: { url: pfUrlBienvenida }, caption: welcomeMsg, mentions: [participant] })
+              continue
+            } catch (eBienvenida) {
+              console.error("Error en bienvenida con imagen:", eBienvenida?.message || eBienvenida)
+            }
+          }
           await sock.sendMessage(id, { text: welcomeMsg, mentions: [participant] })
         }
       }
