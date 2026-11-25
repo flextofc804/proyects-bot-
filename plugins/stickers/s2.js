@@ -47,7 +47,19 @@ function ffmpegExe() {
 
 function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
-    execFile(ffmpegExe(), ["-y", "-loglevel", "error", ...args], { windowsHide: true, timeout: 120000 }, (err) => (err ? reject(err) : resolve()))
+    execFile(
+      ffmpegExe(),
+      ["-y", "-loglevel", "error", ...args],
+      { windowsHide: true, timeout: 120000, maxBuffer: 4 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (!err) return resolve()
+        // el error tiene que decir POR QUE fallo (sino en el host no se puede
+        // diagnosticar: "Command failed" asecas). Incluimos la cola del stderr
+        const cola = String(stderr || "").slice(-160).replace(/\s+/g, " ").trim()
+        const motivo = err.killed ? "llego al timeout de 120s" : err.code !== undefined ? `salio con codigo ${err.code}` : "no se pudo ejecutar"
+        reject(new Error(`ffmpeg ${motivo}${cola ? `: ${cola}` : ""}`))
+      }
+    )
   })
 }
 
@@ -60,7 +72,9 @@ const BASE_WEBP = "scale=512:512:force_original_aspect_ratio=decrease"
 const variantesWebp = (fps) => [
   `scale=512:512:force_original_aspect_ratio=decrease,fps=${fps},pad=512:512:(ow-iw)/2:(oh-ih)/2:color=transparent`,
   `scale=512:512:force_original_aspect_ratio=decrease,fps=${fps},pad=512:512:(ow-iw)/2:(oh-ih)/2:0x00000000,format=rgba`,
-  `${BASE_WEBP},fps=${fps},pad=512:512:(ow-iw)/2:(oh-ih)/2:0x00000000,format=rgba`
+  `${BASE_WEBP},fps=${fps},pad=512:512:(ow-iw)/2:(oh-ih)/2:0x00000000,format=rgba`,
+  // ultimo recurso: 256x256 a 10fps mas liviano (host con CPU debil)
+  "scale=256:256:force_original_aspect_ratio=decrease,fps=10,pad=256:256:(ow-iw)/2:(oh-ih)/2:0x00000000,format=rgba"
 ]
 
 async function crearWebp(inF, webpF, fps, calidad) {
@@ -75,7 +89,7 @@ async function crearWebp(inF, webpF, fps, calidad) {
         "-an",
         "-c:v", "libwebp",
         "-quality", String(calidad),
-        "-compression_level", "6",
+        "-compression_level", "4",
         webpF
       ])
       const webp = fs.readFileSync(webpF)
@@ -372,12 +386,12 @@ export default {
         await mandarS2(ctx, webp, ogg, msgOrigen)
       } catch (e) {
         // fallback seguro: sticker animado normal (como .s) si la parte con sonido falla
-        await ctx.reply(`⚠️ El sticker con sonido falló (${String(e?.message || e).slice(0, 60)}), mando el sticker normal...`)
+        await ctx.reply(`⚠️ El sticker con sonido falló (${String(e?.message || e).slice(0, 130)}), mando el sticker normal...`)
         await ctx.sock.sendMessage(ctx.from, { sticker: webp }, { quoted: ctx.msg })
       }
     } catch (e) {
       try {
-        await ctx.reply(`Error creando el sticker con sonido: ${String(e?.message || e).slice(0, 80)}`)
+        await ctx.reply(`Error creando el sticker con sonido: ${String(e?.message || e).slice(0, 160)}`)
       } catch {}
     }
   }

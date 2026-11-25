@@ -2985,8 +2985,21 @@ case "video":
             if (videoMatch) {
               const cleanUrl = videoMatch[1].replace(/\\u0026/g, "&").replace(/\u0026/g, "&")
               const fbVideo = await axios.get(cleanUrl, { responseType: "arraybuffer" })
-              await sock.sendMessage(from, { video: Buffer.from(fbVideo.data), mimetype: "video/mp4" }, { quoted: msg })
-              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
+              // solo mandar si de verdad es video: si mandamos HTML/una pagina de
+              // login, WhatsApp responde "something is wrong with the video file"
+              const buf = Buffer.from(fbVideo.data)
+              const c = buf.subarray(0, 12)
+              const esVideoReal =
+                buf.length > 12 &&
+                (c.subarray(4, 8).toString("latin1") === "ftyp" ||
+                  c.subarray(0, 3).toString("latin1").toLowerCase() === "flv" ||
+                  (c[0] === 0x1a && c[1] === 0x45 && c[2] === 0xdf && c[3] === 0xa3))
+              if (esVideoReal) {
+                await sock.sendMessage(from, { video: buf, mimetype: "video/mp4" }, { quoted: msg })
+                reaccionar(sock, from, msg, ["✅"]).catch(() => {})
+              } else {
+                await reply("No se pudo descargar el video de Facebook")
+              }
             } else {
               await reply("No se pudo descargar el video de Facebook")
             }
