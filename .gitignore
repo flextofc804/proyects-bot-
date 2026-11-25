@@ -13,3 +13,6 @@ plugins/gacha/tiradas.json
 
 # dueños autorizados del menú secreto (se genera en el host)
 plugins/secreto/erzabot-owners.json
+
+# backups automaticos de la db (generados en el host)
+backups/
