@@ -900,6 +900,48 @@ async function mensajeDeErrorApi(response, fallback) {
   return fallback
 }
 
+// valida que el archivo bajado de la API sea media REAL y no una pagina
+// (Facebook redirige los links lookaside/shares a HTML de login o error: si
+// lo mandamos asi tal cual, WhatsApp responde "something is wrong with the
+// video file" y el usuario ve el video roto)
+function esMediaReal(file, kind) {
+  try {
+    const fd = fs.openSync(file, "r")
+    const buf = Buffer.alloc(512)
+    let leidos = 0
+    try {
+      leidos = fs.readSync(fd, buf, 0, 512, 0)
+    } finally {
+      fs.closeSync(fd)
+    }
+    const head = buf.subarray(0, leidos)
+    const texto = head.toString("latin1").toLowerCase()
+    // paginas HTML/XML/JSON de error o login
+    if (texto.includes("<!doctype html") || texto.includes("<html") || texto.includes("<?xml") || texto.startsWith("{") || texto.includes("loginform") || texto.includes("encapsulated_error")) return false
+    // video: mp4/mov = "ftyp" en el offset 4; mkv/webm = EBML 0x1A45DFA3; flv = "FLV"
+    if (kind === "video") {
+      if (head.length > 8 && head.subarray(4, 8).toString("latin1") === "ftyp") return true
+      if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) return true
+      if (head.length > 3 && head.subarray(0, 3).toString("latin1") === "FLV") return true
+      return false
+    }
+    // audio: mp3(ID3 o 0xFFEx), ogg (OggS), flac (fLaC), wav (RIFF..WAVE), m4a (ftyp)
+    if (kind === "audio") {
+      if (head.length > 3 && head.subarray(0, 3).toString("latin1") === "ID3") return true
+      if (head[0] === 0xff && (head[1] & 0xe0) === 0xe0) return true
+      if (head.length > 4 && head.subarray(0, 4).toString("latin1") === "OggS") return true
+      if (head.length > 4 && head.subarray(0, 4).toString("latin1") === "fLaC") return true
+      if (head.length > 4 && head.subarray(0, 4).toString("latin1") === "RIFF") return true
+      if (head.length > 8 && head.subarray(4, 8).toString("latin1") === "ftyp") return true
+      return false
+    }
+    // otros kinds (documentos, yt bajados por ext): no invalidar
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function downloadApiFile(url, destination, kind, extraHeaders = {}) {
   const response = await fetch(url, {
     headers: { "User-Agent": "zenith-bot/1.0", "bypass-tunnel-reminder": "true", ...extraHeaders },
@@ -919,6 +961,10 @@ async function downloadApiFile(url, destination, kind, extraHeaders = {}) {
       : extensionFromType(response.headers.get("content-type") || "", kind)
   const finalPath = destination.replace(/\.part$/, extension)
   await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(finalPath))
+  if (!esMediaReal(finalPath, kind)) {
+    try { fs.unlinkSync(finalPath) } catch {}
+    throw new Error("lo que devolvi\u00f3 el enlace no es un video/audio v\u00e1lido (p\u00e1gina de error o login de facebook)")
+  }
   return finalPath
 }
 
