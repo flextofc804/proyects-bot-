@@ -154,6 +154,13 @@ function campoProto(numero, payload) {
   return concatU8(concatU8(varint((numero << 3) | 2), varint(payload.length)), payload)
 }
 
+// enmarca una cola del parche: { tag (ya con wire bits), bytes = payload crudo }
+// -> varint(tag) + varint(largo) + payload (probibido doble-marquear: el patch
+// escribe el marco en la ruta con writer Y en la sin writer)
+function campoProtoTag(c) {
+  return concatU8(concatU8(varint(c.tag), varint(c.bytes.length)), c.bytes)
+}
+
 async function listoProtoS2() {
   if (patchS2Listo) return true
   const baileys = await import("@whiskeysockets/baileys")
@@ -168,6 +175,10 @@ async function listoProtoS2() {
     const original = ctor.encode
     // Internamente protobufjs llama encode(obj, writer) cuando anida (fork/ldelim):
     // hay que respetar el writer externo o el contenido anidado se pierde/vacia
+    // IMPORTANTE: las colas llevan SOLO el payload crudo (sin tag ni largo);
+    // el marco (tag + largo + payload) lo escribe el parche en AMBAS rutas.
+    // Si la cola viniera ya enmarcada (campoProto) la ruta con writer la
+    // envolveria DOS veces -> protobuf invalido -> el server dropea el mensaje.
     ctor.encode = function patched(m, writer) {
       const colas = m && m[claveCola]
       const lista = Array.isArray(colas) ? colas : colas && colas.bytes ? [colas] : null
@@ -181,7 +192,7 @@ async function listoProtoS2() {
         return w
       }
       let full = Uint8Array.from(original(m).finish())
-      for (const c of lista) full = concatU8(full, c.bytes)
+      for (const c of lista) full = concatU8(full, campoProtoTag(c))
       return { finish: () => full }
     }
     ctor.encode.__erzaS2 = true
@@ -230,14 +241,16 @@ async function mandarS2(ctx, webp, ogg, msgOrigen) {
       }
       if (proto.ContextInfo?.encode) {
         const ciBytes = proto.ContextInfo.encode(ciObj).finish()
-        colasSticker.push({ tag: (17 << 3) | 2, bytes: campoProto(17, Uint8Array.from(ciBytes)) })
+        // payload CRUDO: el marco (tag + largo) lo escribe el patcheaEncoder
+        colasSticker.push({ tag: (17 << 3) | 2, bytes: Uint8Array.from(ciBytes) })
       }
     }
   } catch {}
 
   // bytes del audio (campo 26 del StickerMessage - el sonido nuevo)
   const audioBytes = proto.Message.AudioMessage.encode(audioMsg).finish()
-  colasSticker.push({ tag: (26 << 3) | 2, bytes: campoProto(26, Uint8Array.from(audioBytes)) })
+  // payload CRUDO del audio: el marco lo agrega el patcheaEncoder en ambas rutas
+  colasSticker.push({ tag: (26 << 3) | 2, bytes: Uint8Array.from(audioBytes) })
   stickerMsg.__erzaAudio = colasSticker
 
   // bytes del sticker completo
@@ -246,8 +259,22 @@ async function mandarS2(ctx, webp, ogg, msgOrigen) {
   // audioStickerMessage (134) -> FutureProofMessage{message(1) -> Message{stickerMessage(26)}}
   const innerBytes = campoProto(26, Uint8Array.from(stickerBytes))
   const fpmBytes = campoProto(1, innerBytes)
+  // payload CRUDO del wrapper 134: el patcheaEncoder de proto.Message escribe
+  // el marco (tag 134 + largo) tanto en la ruta con writer como sin writer
   const outer = proto.Message.create({})
-  outer.__erzaAudioStickerTail = { tag: (134 << 3) | 2, bytes: campoProto(134, fpmBytes) }
+  // CRITICO: el server de WhatsApp DROPEA silenciosamente el stanza de media
+  // cuando el nodo enc no lleva el atributo mediatype (viene vacio = mensajes
+  // que nunca llegan y sin ningun error). Baileys saca el mediatype mirando
+  // SOLO las keys del nivel superior del Message (getMediaType en
+  // messages-send.js): con solo audioStickerMessage nunca emite "sticker".
+  // Al poner el sticker tambien como field 26 top-level, getMediaType()
+  // ve stickerMessage -> enc lleva mediatype=sticker -> el mensaje SI viaja.
+  // Ademas es el comportamiento documentado de WhatsApp: los clientes sin la
+  // actualizacion ven el sticker mudo (field 26), y los clientes nuevos
+  // desempaquetan el field 134 (audioStickerMessage) y leen el sonido.
+  // El orden de campos en protobuf es libre: la cola 134 se apenda al final.
+  outer.stickerMessage = stickerMsg
+  outer.__erzaAudioStickerTail = { tag: (134 << 3) | 2, bytes: fpmBytes }
 
   const msgId = "3EB0" + crypto.randomBytes(10).toString("hex").toUpperCase()
   await ctx.sock.relayMessage(ctx.from, outer, { messageId: msgId })
