@@ -935,6 +935,14 @@ function esMediaReal(file, kind) {
       if (head.length > 8 && head.subarray(4, 8).toString("latin1") === "ftyp") return true
       return false
     }
+    // los kinds basados en /dl (facebook, instagram, tiktok, x) SON videos:
+    // hay que validarlos igual que "video" (devuelven HTML de login/error)
+    if (["video", "facebook", "instagram", "tiktok", "x"].includes(kind)) {
+      if (head.length > 8 && head.subarray(4, 8).toString("latin1") === "ftyp") return true
+      if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) return true
+      if (head.length > 3 && head.subarray(0, 3).toString("latin1") === "FLV") return true
+      return false
+    }
     // otros kinds (documentos, yt bajados por ext): no invalidar
     return true
   } catch {
