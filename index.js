@@ -12,7 +12,7 @@ import pino from "pino"
 import fs from "fs"
 import crypto from "crypto"
 import path from "path"
-import { exec } from "child_process"
+import { exec, execFile } from "child_process"
 import { promisify } from "util"
 import { fileURLToPath } from "url"
 import axios from "axios"
@@ -121,27 +121,74 @@ async function imageToSticker(buffer) {
   }
 }
 
+async function primerFrameVideo(buffer) {
+  const inFile = tempFile("mp4")
+  const outFile = tempFile("png")
+  fs.writeFileSync(inFile, buffer)
+  try {
+    // CLI directo (sin fluent-ffmpeg): el chequeo de formatos de fluent no
+    // lista el muxer de imagen del ffmpeg estatico y rechaza "png"
+    const exe = ffmpeg && fs.existsSync(ffmpeg) ? ffmpeg : "ffmpeg"
+    await new Promise((resolve, reject) => {
+      execFile(exe, ["-y", "-i", inFile, "-frames:v", "1", "-an", outFile], { windowsHide: true, timeout: 120000 }, (err) => (err ? reject(err) : resolve()))
+    })
+    return fs.readFileSync(outFile)
+  } finally {
+    removeFile(inFile)
+    removeFile(outFile)
+  }
+}
+
 async function videoToSticker(buffer) {
   const inFile = tempFile("mp4")
   const outFile = tempFile("webp")
   fs.writeFileSync(inFile, buffer)
   try {
-    const ffmpeg = await loadFfmpeg()
-    const filter = "scale=512:512:force_original_aspect_ratio=decrease,fps=15,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=transparent"
-    if (ffmpeg) {
-      await new Promise((resolve, reject) => {
-        ffmpeg(inFile)
-          .inputOptions("-t", "10")
-          .outputOptions("-vf", filter, "-loop", "0", "-ss", "00:00:00", "-t", "10", "-an")
-          .toFormat("webp")
-          .save(outFile)
-          .on("end", resolve)
-          .on("error", reject)
-      })
-    } else {
-      await execAsync(`ffmpeg -y -i "${inFile}" -t 10 -vf "${filter}" -loop 0 -an "${outFile}"`)
+    // IMPORTANTE: algunos builds de ffmpeg (incluido el estatico del host) NO
+    // reconocen "transparent" como color del pad ("Cannot find color
+    // 'transparent'" -> error al crear sticker). Probamos filtros en cascada
+    // hasta conseguir salida; el hex 0x00000000 + format=rgba da el mismo
+    // resultado visual (fondo transparente real)
+    const filtros = [
+      "scale=512:512:force_original_aspect_ratio=decrease,fps=15,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=transparent",
+      "scale=512:512:force_original_aspect_ratio=decrease,fps=15,pad=512:512:(ow-iw)/2:(oh-ih)/2:0x00000000,format=rgba"
+    ]
+    const crear = async (filter, extra = []) => {
+      const ffmpeg = await loadFfmpeg()
+      if (ffmpeg) {
+        await new Promise((resolve, reject) => {
+          ffmpeg(inFile)
+            .outputOptions("-vf", filter, "-loop", "0", "-ss", "00:00:00", "-t", "10", "-an", ...extra)
+            .toFormat("webp")
+            .save(outFile)
+            .on("end", resolve)
+            .on("error", reject)
+        })
+      } else {
+        await execAsync(`ffmpeg -y -i "${inFile}" -ss 00:00:00 -t 10 -vf "${filter}" -loop 0 -an ${extra.join(" ")} "${outFile}"`)
+      }
+      return fs.existsSync(outFile) ? fs.readFileSync(outFile) : Buffer.alloc(0)
     }
-    return fs.readFileSync(outFile)
+    let sticker = null
+    for (const filter of filtros) {
+      try {
+        const out = await crear(filter)
+        if (out.length) {
+          sticker = out
+          break
+        }
+      } catch (e) {}
+    }
+    if (!sticker || !sticker.length) throw new Error("ffmpeg no pudo crear el webp del sticker")
+    // si pesa demasiado (WhatsApp solo acepta ~500KB), segunda pasada mas comprimida
+    if (sticker.length > 450 * 1024) {
+      try {
+        const filtro10 = "scale=512:512:force_original_aspect_ratio=decrease,fps=10,pad=512:512:(ow-iw)/2:(oh-ih)/2:0x00000000,format=rgba"
+        const out = await crear(filtro10, ["-quality", "50"])
+        if (out.length && out.length < sticker.length) sticker = out
+      } catch (e) {}
+    }
+    return sticker
   } finally {
     removeFile(inFile)
     removeFile(outFile)
@@ -1948,10 +1995,19 @@ async function startBot(opts = {}) {
               return
             }
             const isVideo = quoted?.videoMessage || msg.message.videoMessage
-            const stickerBuffer = isVideo ? await videoToSticker(buffer) : await imageToSticker(buffer)
+            let stickerBuffer = null
+            try {
+              stickerBuffer = isVideo ? await videoToSticker(buffer) : await imageToSticker(buffer)
+            } catch (eVideo) {
+              if (!isVideo) throw eVideo
+              // si el sticker animado del video falla, ultimo recurso: primera
+              // imagen del video como sticker estatico (sharp no lee mp4, hay
+              // que extraer el frame con ffmpeg primero)
+              stickerBuffer = await imageToSticker(await primerFrameVideo(buffer))
+            }
             await sock.sendMessage(from, { sticker: stickerBuffer }, { quoted: msg })
           } catch (e) {
-            await reply("Error al crear sticker")
+            await reply(`Error al crear sticker (${String(e?.message || e).slice(0, 60)})`)
           }
           break
 
