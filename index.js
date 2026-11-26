@@ -213,23 +213,6 @@ async function spackPorNombre(sock, from, msg, nombre, reply) {
     } catch {}
   }
   if (!enviados) await reply("No pude bajar los stickers del pack, prob\u00e1 de nuevo \ud83d\udd01")
-  // tarjeta final con el link del pack: WhatsApp no renderiza tarjetas wa.me de packs
-  // creados al vuelo (eso solo lo tiene su propia app de stickers), PERO el link de
-  // Sticker.ly deja ANIADIR el pack completo a la cuenta de la persona desde la app
-  try {
-    const codigoPack = String(packElegido.shareUrl || "").split("/").pop()
-    if (codigoPack) {
-      const nombrePackLimpio = String(packElegido.name || nombre).slice(0, 60)
-      const imagenPack = String(packElegido.trayUrl || urls[0] || "")
-      const contenidoTarjeta = {
-        caption: `\ud83d\udce6 *${nombrePackLimpio}*\n\n\ud83d\udd17 Agreg\u00e1 el pack completo a tu WhatsApp (queda como pack real con su nombre):\n\nhttps://sticker.ly/s/${codigoPack}\n\n\u25b8 Toc\u00e1 el link \u2192 abrir en Sticker.ly \u2192 *A\u00f1adir a WhatsApp* \u2705\n\u25b8 Tambi\u00e9n te los mand\u00e9 ^^ arriba para usarlos al toque \ud83d\udcaf`
-      }
-      if (imagenPack && /^https?:\/\//.test(imagenPack)) contenidoTarjeta.image = { url: imagenPack }
-      await sock.sendMessage(from, contenidoTarjeta, { quoted: msg })
-    }
-  } catch (eTarjeta) {
-    console.error("Error tarjeta pack:", eTarjeta?.message || eTarjeta)
-  }
 }
 
 async function primerFrameVideo(buffer) {
