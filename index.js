@@ -5,7 +5,10 @@ import makeWASocket, {
   Browsers,
   makeCacheableSignalKeyStore,
   downloadMediaMessage,
-  getContentType
+  getContentType,
+  encryptedStream,
+  MEDIA_PATH_MAP,
+  MEDIA_HKDF_KEY_MAPPING
 } from "@whiskeysockets/baileys"
 import { sendList } from 'baileys-buttons'
 import pino from "pino"
@@ -370,56 +373,138 @@ async function sticker512(webp) {
   }
 }
 
+// encryptedStream devuelve ANTES de que el archivo cifrado termine de
+// escribirse (encFileWriteStream.end() sin esperar finish). Esperar a que
+// este completo para no subir un pack cortado/vacio.
+async function esperarArchivoListo(filePath, tamMinimo, timeoutMs = 10000) {
+  const inicio = Date.now()
+  for (;;) {
+    try {
+      const st = fs.statSync(filePath)
+      if (st && st.size >= tamMinimo) return st.size
+    } catch {}
+    if (Date.now() - inicio > timeoutMs) throw new Error("el pack cifrado no termino de escribirse a tiempo")
+    await new Promise((r) => setTimeout(r, 10))
+  }
+}
+
+// Baileys no conoce el tipo "sticker-pack"; sus tablas de media son objetos
+// exportados y mutables: las completamos UNA vez para que el zip viaje
+// cifrado con el HKDF "WhatsApp Sticker Pack Keys" y se suba a /mms/sticker-pack
+// (como hace la app oficial). Sin esto WhatsApp no puede descifrar el zip
+// y el pack llega en blanco (portada rota y stickers vacios).
+let SPACK_TIPOS_REGISTRADOS = false
+function registrarTiposStickerPack() {
+  if (SPACK_TIPOS_REGISTRADOS) return true
+  try {
+    if (!MEDIA_PATH_MAP["sticker-pack"]) MEDIA_PATH_MAP["sticker-pack"] = "/mms/sticker-pack"
+    if (!MEDIA_HKDF_KEY_MAPPING["sticker-pack"]) MEDIA_HKDF_KEY_MAPPING["sticker-pack"] = "Sticker Pack"
+    SPACK_TIPOS_REGISTRADOS = true
+  } catch (eTipos) {
+    console.error("No pude registrar sticker-pack en Baileys:", eTipos?.message || eTipos)
+  }
+  return SPACK_TIPOS_REGISTRADOS
+}
+
 async function mandarPackReal(sock, from, msg, nombrePack, cookiesWebp) {
-  const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = await import("@whiskeysockets/baileys")
+  // formato REAL de WhatsApp (como la app oficial):
+  // 1) zip .wasticker con contents.json + stickers nombrados por hash + tray.png
+  // 2) cifrado HKDF "WhatsApp Sticker Pack Keys" via encryptedStream("sticker-pack")
+  // 3) upload a /mms/sticker-pack y stickerPackMessage USER_CREATED al relay
+  registrarTiposStickerPack()
+  const { proto } = await import("@whiskeysockets/baileys")
   const packId = crypto.randomUUID()
   const archivosZip = []
   const stickers = []
-  let indexSticker = 0
   for (const webp of cookiesWebp) {
     const webpOk = await sticker512(webp)
-    const nombreSticker = `sticker_${indexSticker}.webp`
+    // WhatsApp nombra cada sticker por su sha256 en base64
+    const nombreSticker = `${crypto.createHash("sha256").update(webpOk).digest("base64").replace(/\//g, "-")}.webp`
+    if (stickers.some((s) => s.fileName === nombreSticker)) continue
     archivosZip.push({ name: nombreSticker, data: webpOk })
-    stickers.push({ fileName: nombreSticker, isAnimated: webpOk.includes("ANIM"), emojis: [], accessibilityLabel: "", isLottie: false, mimetype: "image/webp" })
-    indexSticker++
+    stickers.push({
+      fileName: nombreSticker,
+      mimetype: "image/webp",
+      isAnimated: webpOk.includes("ANIM"),
+      isLottie: false,
+      emojis: ["\u{1F30A}", "\u{1F4A7}", "\u{1F499}"],
+      accessibilityLabel: "\u200e"
+    })
   }
   if (!archivosZip.length) throw new Error("pack sin stickers")
+
+  // tray (vista previa del pack): PNG 96x96 del primer sticker
   const trayPng = await trayPngDe(cookiesWebp[0])
-  archivosZip.push({ name: "tray.png", data: trayPng })
+  const trayIconFileName = trayPng && trayPng.length > 8 ? `${packId}.png` : null
+  if (trayIconFileName) archivosZip.push({ name: trayIconFileName, data: trayPng })
+
+  // contents.json: metadata que la UI del pack lee al abrirlo
+  const contenidos = stickers.map((s) => ({
+    image_file: s.fileName,
+    emojis: s.emojis,
+    isAnimated: s.isAnimated
+  }))
+  const contentsJson = JSON.stringify({
+    android_play_store_link: "https://play.google.com/store/apps/details?id=com.whatsapp.stickers",
+    ios_app_download_link: "https://apps.apple.com/app/whatsapp-messenger/id310633997",
+    image_data_version: "1",
+    avoid_cache: false,
+    sticker_packs: [{
+      identifier: packId,
+      name: String(nombrePack || "Sticker Pack").slice(0, 60),
+      publisher: "ErzaBot-MD",
+      publisher_email: "",
+      publisher_website: "",
+      privacy_policy_website: "",
+      license_agreement_website: "",
+      image_data_version: "1",
+      ...(trayIconFileName ? { tray_image_file: trayIconFileName } : {}),
+      animated_sticker_pack: contenidos.some((c) => c.isAnimated),
+      pack_description: `Pack de ${String(nombrePack || "Stickers").slice(0, 40)}`,
+      stickers: contenidos
+    }]
+  }, null, 2)
+  archivosZip.unshift({ name: "contents.json", data: Buffer.from(contentsJson, "utf8") })
+
   const zip = buildZipArchivo(archivosZip)
-  const subido = await prepareWAMessageMedia(
-    { document: zip, mimetype: "application/zip", fileName: `${packId}.zip` },
-    { upload: sock.waUploadToServer }
-  )
-  const doc = subido?.documentMessage
-  if (!doc) throw new Error("no se pudo subir el pack")
-  const origenPack = proto.Message.StickerPackMessage.StickerPackOrigin?.USER_CREATED ?? 2
-  const saliente = generateWAMessageFromContent(
-    from,
-    {
-      stickerPackMessage: {
-        stickerPackId: packId,
-        name: String(nombrePack || "Sticker Pack").slice(0, 60),
-        publisher: "ErzaBot-MD",
-        stickers,
-        fileLength: doc.fileLength,
-        fileSha256: doc.fileSha256,
-        fileEncSha256: doc.fileEncSha256,
-        mediaKey: doc.mediaKey,
-        directPath: doc.directPath,
-        mediaKeyTimestamp: doc.mediaKeyTimestamp,
-        trayIconFileName: "tray.png",
-        stickerPackSize: zip.length,
-        stickerPackOrigin: origenPack
-      }
-    },
-    { userJid: sock.user?.id, quoted: msg }
-  )
-  await sock.relayMessage(from, saliente.message, { messageId: saliente.key.id })
+
+  // cifrar con las claves de sticker-pack (NO como documento)
+  const encryptado = await encryptedStream(zip, "sticker-pack")
+  await esperarArchivoListo(encryptado.encFilePath, Math.ceil(zip.length / 16) * 16 + 10)
+  let subido = null
+  try {
+    subido = await sock.waUploadToServer(encryptado.encFilePath, {
+      mediaType: "sticker-pack",
+      fileEncSha256B64: encryptado.fileEncSha256.toString("base64"),
+      timeoutMs: 120000
+    })
+  } finally {
+    try { if (encryptado.encFilePath && fs.existsSync(encryptado.encFilePath)) fs.unlinkSync(encryptado.encFilePath) } catch {}
+  }
+  const rutaDirecta = subido?.directPath || subido?.direct_path
+  if (!rutaDirecta) throw new Error("WhatsApp no devolvio la ruta del pack")
+
+  const mensajePack = proto.Message.StickerPackMessage.fromObject({
+    stickerPackId: packId,
+    name: String(nombrePack || "Sticker Pack").slice(0, 60),
+    publisher: "ErzaBot-MD",
+    packDescription: `Pack de ${String(nombrePack || "Stickers").slice(0, 40)}`,
+    stickerPackOrigin: proto.Message.StickerPackMessage.StickerPackOrigin?.USER_CREATED ?? 2,
+    stickerPackSize: zip.length,
+    stickers,
+    fileSha256: encryptado.fileSha256,
+    fileEncSha256: encryptado.fileEncSha256,
+    mediaKey: encryptado.mediaKey,
+    directPath: rutaDirecta,
+    fileLength: encryptado.fileLength,
+    mediaKeyTimestamp: Math.floor(Date.now() / 1000),
+    ...(trayIconFileName ? { trayIconFileName } : {})
+  })
+  await sock.relayMessage(from, { stickerPackMessage: mensajePack }, {})
 }
 
 async function spackPorNombre(sock, from, msg, nombre, reply) {
-  await reply(`\ud83d\udd0d Buscando stickers de *${nombre}* en Sticker.ly...`)
+  await reply(`📦 Preparando el pack de stickers *${nombre}*...`)
   let packs = []
   try {
     packs = await stickerlyBuscarPacks(nombre)
