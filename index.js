@@ -174,6 +174,206 @@ async function stickerListo(buffer) {
   try { return await imageToSticker(buffer) } catch { return null }
 }
 
+// ===== PACK REAL: UN solo mensaje stickerPackMessage con el boton nativo "Ver paquete de stickers" =====
+// (formato de la comunidad: webps + tray.png en un zip sin compresion, subido como documento,
+//  y los campos del documento convertidos en el stickerPackMessage)
+const CRC_TABLA = (() => {
+  const t = new Int32Array(256)
+  for (let n = 0; n < 256; n++) {
+    let c = n
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+    t[n] = c
+  }
+  return t
+})()
+function crc32(buf) {
+  let crc = 0xffffffff
+  for (let i = 0; i < buf.length; i++) crc = CRC_TABLA[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8)
+  return (crc ^ 0xffffffff) >>> 0
+}
+function buildZipArchivo(files) {
+  const partesLocales = []
+  const partesCentrales = []
+  let offset = 0
+  for (const { name, data } of files) {
+    const nombreBuf = Buffer.from(name, "utf8")
+    const crc = crc32(data)
+    const cabeceraLocal = Buffer.alloc(30)
+    cabeceraLocal.writeUInt32LE(0x04034b50, 0)
+    cabeceraLocal.writeUInt16LE(20, 4)
+    cabeceraLocal.writeUInt32LE(crc, 14)
+    cabeceraLocal.writeUInt32LE(data.length, 18)
+    cabeceraLocal.writeUInt32LE(data.length, 22)
+    cabeceraLocal.writeUInt16LE(nombreBuf.length, 26)
+    partesLocales.push(cabeceraLocal, nombreBuf, data)
+    const cabeceraCentral = Buffer.alloc(46)
+    cabeceraCentral.writeUInt32LE(0x02014b50, 0)
+    cabeceraCentral.writeUInt16LE(20, 4)
+    cabeceraCentral.writeUInt16LE(20, 6)
+    cabeceraCentral.writeUInt32LE(crc, 16)
+    cabeceraCentral.writeUInt32LE(data.length, 20)
+    cabeceraCentral.writeUInt32LE(data.length, 24)
+    cabeceraCentral.writeUInt16LE(nombreBuf.length, 28)
+    cabeceraCentral.writeUInt32LE(offset, 42)
+    partesCentrales.push(cabeceraCentral, nombreBuf)
+    offset += cabeceraLocal.length + nombreBuf.length + data.length
+  }
+  const inicioDir = offset
+  const dirBuf = Buffer.concat(partesCentrales)
+  const eocd = Buffer.alloc(22)
+  eocd.writeUInt32LE(0x06054b50, 0)
+  eocd.writeUInt16LE(files.length, 8)
+  eocd.writeUInt16LE(files.length, 10)
+  eocd.writeUInt32LE(dirBuf.length, 12)
+  eocd.writeUInt32LE(inicioDir, 16)
+  return Buffer.concat([...partesLocales, dirBuf, eocd])
+}
+// webp animado -> webp estatico del primer frame (sin sharp; el ffmpeg-static no decodifica ANIM)
+function webpAnimadoAEstatico(webp) {
+  try {
+    if (!webp || webp.length < 30) return null
+    if (webp.subarray(0, 4).toString("latin1") !== "RIFF" || webp.subarray(8, 12).toString("latin1") !== "WEBP") return null
+    if (!webp.includes("ANIM")) return webp
+    let vp8 = null, vp8l = null, alfa = null, cabeceraVp8x = null
+    let off = 12
+    while (off + 8 <= webp.length) {
+      const fourcc = webp.toString("latin1", off, off + 4)
+      const tamanio = webp.readUInt32LE(off + 4)
+      const inicioDatos = off + 8
+      if (fourcc === "VP8 " || fourcc === "VP8") vp8 = webp.subarray(inicioDatos, inicioDatos + tamanio)
+      else if (fourcc === "VP8L") vp8l = webp.subarray(inicioDatos, inicioDatos + tamanio)
+      else if (fourcc === "VP8X") cabeceraVp8x = webp.subarray(inicioDatos, inicioDatos + tamanio)
+      else if (fourcc === "ANMF") {
+        let sub = inicioDatos + 16 // cabecera interna de ANMF (16 bytes) 
+        const finAnmf = inicioDatos + tamanio
+        while (sub + 8 <= finAnmf) {
+          const subFour = webp.toString("latin1", sub, sub + 4)
+          const subTam = webp.readUInt32LE(sub + 4)
+          if (subFour === "VP8 " || subFour === "VP8") vp8 = webp.subarray(sub + 8, sub + 8 + subTam)
+          else if (subFour === "VP8L") vp8l = webp.subarray(sub + 8, sub + 8 + subTam)
+          else if (subFour === "ALPH") alfa = webp.subarray(sub + 8, sub + 8 + subTam)
+          sub += 8 + subTam + (subTam % 2)
+        }
+        if (vp8 || vp8l) break
+      }
+      off = inicioDatos + tamanio + (tamanio % 2)
+    }
+    if (!vp8 && !vp8l) return null
+    let ancho = 1, alto = 1
+    if (cabeceraVp8x && cabeceraVp8x.length >= 10) {
+      ancho = 1 + (cabeceraVp8x[4] | (cabeceraVp8x[5] << 8) | (cabeceraVp8x[6] << 16))
+      alto = 1 + (cabeceraVp8x[7] | (cabeceraVp8x[8] << 8) | (cabeceraVp8x[9] << 16))
+    }
+    const vp8xNuevo = Buffer.alloc(10)
+    vp8xNuevo[0] = alfa ? 0x10 : 0
+    vp8xNuevo[4] = (ancho - 1) & 0xff
+    vp8xNuevo[5] = ((ancho - 1) >> 8) & 0xff
+    vp8xNuevo[6] = ((ancho - 1) >> 16) & 0xff
+    vp8xNuevo[7] = (alto - 1) & 0xff
+    vp8xNuevo[8] = ((alto - 1) >> 8) & 0xff
+    vp8xNuevo[9] = ((alto - 1) >> 16) & 0xff
+    const chunks = [["VP8X", vp8xNuevo]]
+    if (alfa) chunks.push(["ALPH", alfa])
+    chunks.push(vp8 ? ["VP8", vp8] : ["VP8L", vp8l])
+    let cuerpo = Buffer.from("WEBP", "latin1")
+    let total = 4
+    const datosChunks = []
+    for (const [cc, datos] of chunks) {
+      const cabecera = Buffer.alloc(8)
+      cabecera.write(cc, 0, "latin1")
+      cabecera.writeUInt32LE(datos.length, 4)
+      const relleno = datos.length % 2 ? Buffer.alloc(1) : null
+      datosChunks.push(cabecera, datos)
+      if (relleno) datosChunks.push(relleno)
+      total += 8 + datos.length + (relleno ? 1 : 0)
+    }
+    const cabeceraRiff = Buffer.from("RIFF", "latin1")
+    const tamanio = Buffer.alloc(4)
+    tamanio.writeUInt32LE(total, 0)
+    return Buffer.concat([cabeceraRiff, tamanio, cuerpo, ...datosChunks])
+  } catch {
+    return null
+  }
+}
+
+async function trayPngDe(webp) {
+  const webpPlano = webpAnimadoAEstatico(webp) || webp
+  try {
+    const sharp = await loadSharp()
+    if (sharp) {
+      return await sharp(webpPlano).resize(96, 96, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer()
+    }
+  } catch {}
+  let inFile = tempFile("trayin")
+  const outFile = tempFile("tray.png")
+  fs.writeFileSync(inFile, webpPlano)
+  try {
+    const filtroTray = "scale='min(96,iw)':'min(96,ih)':force_original_aspect_ratio=decrease,format=rgba,pad=96:96:-1:-1:color=#00000000"
+    await new Promise((resolve, reject) => {
+      execFile(ffmpeg, ["-y", "-i", inFile, "-vf", filtroTray, "-vframes", "1", "-vcodec", "png", outFile], { timeout: 30000 }, (err) => (err ? reject(err) : resolve()))
+    })
+    return fs.readFileSync(outFile)
+  } catch {
+    // ultimo recurso: placeholder color solido (que nunca rompa el pack)
+    inFile = tempFile("tray.txt")
+    try {
+      await new Promise((resolve, reject) => {
+        execFile(ffmpeg, ["-y", "-f", "lavfi", "-i", "color=#1B1B1B:s=96x96", "-frames:v", "1", "-update", "1", outFile], { timeout: 30000 }, (err) => (err ? reject(err) : resolve()))
+      })
+      return fs.readFileSync(outFile)
+    } catch { return Buffer.alloc(0) }
+  } finally {
+    removeFile(inFile)
+    removeFile(outFile)
+  }
+}
+async function mandarPackReal(sock, from, msg, nombrePack, cookiesWebp) {
+  const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = await import("@whiskeysockets/baileys")
+  const packId = crypto.randomUUID()
+  const archivosZip = []
+  const stickers = []
+  let indexSticker = 0
+  for (const webp of cookiesWebp) {
+    const nombreSticker = `sticker_${indexSticker}.webp`
+    archivosZip.push({ name: nombreSticker, data: webp })
+    stickers.push({ fileName: nombreSticker, isAnimated: webp.includes("ANIM"), emojis: [], accessibilityLabel: "", isLottie: false, mimetype: "image/webp" })
+    indexSticker++
+  }
+  if (!archivosZip.length) throw new Error("pack sin stickers")
+  const trayPng = await trayPngDe(cookiesWebp[0])
+  archivosZip.push({ name: "tray.png", data: trayPng })
+  const zip = buildZipArchivo(archivosZip)
+  const subido = await prepareWAMessageMedia(
+    { document: zip, mimetype: "application/zip", fileName: `${packId}.zip` },
+    { upload: sock.waUploadToServer }
+  )
+  const doc = subido?.documentMessage
+  if (!doc) throw new Error("no se pudo subir el pack")
+  const origenPack = proto.Message.StickerPackMessage.StickerPackOrigin?.USER_CREATED ?? 2
+  const saliente = generateWAMessageFromContent(
+    from,
+    {
+      stickerPackMessage: {
+        stickerPackId: packId,
+        name: String(nombrePack || "Sticker Pack").slice(0, 60),
+        publisher: "ErzaBot-MD",
+        stickers,
+        fileLength: doc.fileLength,
+        fileSha256: doc.fileSha256,
+        fileEncSha256: doc.fileEncSha256,
+        mediaKey: doc.mediaKey,
+        directPath: doc.directPath,
+        mediaKeyTimestamp: doc.mediaKeyTimestamp,
+        trayIconFileName: "tray.png",
+        stickerPackSize: zip.length,
+        stickerPackOrigin: origenPack
+      }
+    },
+    { userJid: sock.user?.id, quoted: msg }
+  )
+  await sock.relayMessage(from, saliente.message, { messageId: saliente.key.id })
+}
+
 async function spackPorNombre(sock, from, msg, nombre, reply) {
   await reply(`\ud83d\udd0d Buscando stickers de *${nombre}* en Sticker.ly...`)
   let packs = []
@@ -200,19 +400,30 @@ async function spackPorNombre(sock, from, msg, nombre, reply) {
     await reply("El pack no tiene stickers descargables, prob\u00e1 con otra b\u00fasqueda")
     return
   }
-  await sock.sendMessage(from, { text: `\ud83d\udce6 *${String(packElegido.name || nombre).slice(0, 60)}*\n\ud83c\udfa8 Sticker pack con ${urls.length} stickers \u2014 mandando...` }, { quoted: msg })
-  let enviados = 0
+  const buffersFinales = []
   for (const url of urls.slice(0, 12)) {
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(20000) })
       if (!r.ok) continue
       const sticker = await stickerListo(Buffer.from(await r.arrayBuffer()))
       if (!sticker) continue
-      await sock.sendMessage(from, { sticker })
-      enviados++
+      buffersFinales.push(sticker)
     } catch {}
   }
-  if (!enviados) await reply("No pude bajar los stickers del pack, prob\u00e1 de nuevo \ud83d\udd01")
+  if (!buffersFinales.length) {
+    await reply("No pude bajar los stickers del pack, prob\u00e1 de nuevo \ud83d\udd01")
+    return
+  }
+  // UN SOLO mensaje tipo pack (sin spam): boton nativo "Ver paquete de stickers"
+  try {
+    await mandarPackReal(sock, from, msg, String(packElegido.name || nombre), buffersFinales)
+  } catch (ePack) {
+    console.error("Error mandando stickerPackMessage:", ePack?.message || ePack)
+    // fallback: los stickers sueltos
+    for (const sticker of buffersFinales) {
+      try { await sock.sendMessage(from, { sticker }) } catch {}
+    }
+  }
 }
 
 async function primerFrameVideo(buffer) {
