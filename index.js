@@ -274,7 +274,10 @@ function webpAnimadoAEstatico(webp) {
     vp8xNuevo[9] = ((alto - 1) >> 16) & 0xff
     const chunks = [["VP8X", vp8xNuevo]]
     if (alfa) chunks.push(["ALPH", alfa])
-    chunks.push(vp8 ? ["VP8", vp8] : ["VP8L", vp8l])
+    // IMPORTANTE: el fourcc del chunk lossy es "VP8 " CON espacio final
+    // (padding RIFF a 4 bytes); "VP8\0" es invalido y ffmpeg escupe
+    // "image data not found"
+    chunks.push(vp8 ? ["VP8 ", vp8] : ["VP8L", vp8l])
     let cuerpo = Buffer.from("WEBP", "latin1")
     let total = 4
     const datosChunks = []
@@ -327,6 +330,46 @@ async function trayPngDe(webp) {
     removeFile(outFile)
   }
 }
+// sticker -> 512x512 webp (especificacion de WhatsApp para stickers).
+// WhatsApp NO reescala los stickers dentro de un stickerPackMessage: si el
+// webp tiene otra dimension la grilla del pack lo muestra en blanco.
+async function sticker512(webp) {
+  const animado = Buffer.isBuffer(webp) && webp.includes("ANIM")
+  try {
+    const sharp = await loadSharp()
+    if (sharp) {
+      // animado: conserva la animacion reescalada a 512 (sharp >= 0.30)
+      return await sharp(webp, animado ? { animated: true } : {})
+        .resize(512, 512, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        .webp({ quality: 70 })
+        .toBuffer()
+    }
+  } catch {}
+  // sin sharp: el ffmpeg estatico NO decodifica webp animado (ANIM) ->
+  // quedarnos con el primer frame estatico y redimensionarlo a 512
+  try {
+    const entrada = animado ? (webpAnimadoAEstatico(webp) || webp) : webp
+    const inFile = tempFile("pk512in")
+    const outFile = tempFile("pk512.webp")
+    fs.writeFileSync(inFile, entrada)
+    try {
+      const filtro = "scale='min(512,iw)':'min(512,ih)':force_original_aspect_ratio=decrease,format=rgba,pad=512:512:-1:-1:color=#00000000"
+      await new Promise((resolve, reject) => {
+        execFile(ffmpeg && fs.existsSync(ffmpeg) ? ffmpeg : "ffmpeg", ["-y", "-i", inFile, "-vf", filtro, "-frames:v", "1", "-an", "-vcodec", "libwebp", outFile], { timeout: 60000 }, (err) => (err ? reject(err) : resolve()))
+      })
+      const salida = fs.readFileSync(outFile)
+      if (salida.length > 16) return salida
+      throw new Error("salida vacia")
+    } finally {
+      removeFile(inFile)
+      removeFile(outFile)
+    }
+  } catch {
+    // ultimo recurso: original tal cual (mejor que quedarse sin pack)
+    return webp
+  }
+}
+
 async function mandarPackReal(sock, from, msg, nombrePack, cookiesWebp) {
   const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = await import("@whiskeysockets/baileys")
   const packId = crypto.randomUUID()
@@ -334,9 +377,10 @@ async function mandarPackReal(sock, from, msg, nombrePack, cookiesWebp) {
   const stickers = []
   let indexSticker = 0
   for (const webp of cookiesWebp) {
+    const webpOk = await sticker512(webp)
     const nombreSticker = `sticker_${indexSticker}.webp`
-    archivosZip.push({ name: nombreSticker, data: webp })
-    stickers.push({ fileName: nombreSticker, isAnimated: webp.includes("ANIM"), emojis: [], accessibilityLabel: "", isLottie: false, mimetype: "image/webp" })
+    archivosZip.push({ name: nombreSticker, data: webpOk })
+    stickers.push({ fileName: nombreSticker, isAnimated: webpOk.includes("ANIM"), emojis: [], accessibilityLabel: "", isLottie: false, mimetype: "image/webp" })
     indexSticker++
   }
   if (!archivosZip.length) throw new Error("pack sin stickers")
