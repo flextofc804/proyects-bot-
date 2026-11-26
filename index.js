@@ -1480,6 +1480,10 @@ function desavisarSub(numeroSub) {
 }
 // SPACK: modo pack de stickers — recolecta las proximas imagenes que mande el usuario y las devuelve como stickers
 const SPACK_PENDIENTES = new Map() // `${from}|${sender}` -> { restantes, total, buffers, vence }
+// S2: cache de videos "de una sola vista" que pasan por el chat. El stub citado
+// (quoted) llega SIN mediaKey -> "Cannot derive from empty media key". Guardamos
+// el video completo con su mediaKey para que .s2 lo use (TTL 10 min)
+const VISTA_UNICA = new Map() // `${from}|${sender}` -> { videoMessage, key, vence }
 // Cooldown anti-flood: 2 segundos entre comandos por usuario (los owners no tienen cooldown)
 const COOLDOWN_COMANDOS = new Map()
 const VENTANA_CODIGO_MS = 600000 // ventana de 10 minutos para cada codigo de pairing
@@ -1637,6 +1641,10 @@ async function startBot(opts = {}) {
     SUBBOTS.set(numeroSub, { numero: numeroSub, token: tokenSub, conectado: false, desde: Date.now(), intentos: 0 })
   }
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir)
+  // FIX anti-spam: si la sesion YA tenia creds registradas al crear el socket,
+  // es una restauracion (reinicio del servidor / reconexion), NO una vinculacion
+  // nueva -> el panel SUB-BOT CONECTADO no se manda nunca en ese caso
+  const sesionYaRegistrada = Boolean(state.creds?.registered)
   const { version } = await fetchLatestBaileysVersion()
 
   const sock = makeWASocket({
@@ -1826,9 +1834,12 @@ async function startBot(opts = {}) {
         PEDIGO_CODIGO.delete(numeroSub)
         console.log(`[SUBBOT] +${numeroSub} conectado como sub-bot ✅`)
         if (!previa.conectado) {
-          // anti-spam: el aviso de conexion solo la PRIMERA vez que se vincula
-          // este numero; las reconexiones quedan silenciosas (solo log)
-          if (!subAvisado(numeroSub)) {
+          // anti-spam: el aviso de conexion solo cuando se VINCULA de verdad
+          // (sesion nueva). Al reiniciar el servidor (sesion restaurada) y en
+          // reconexiones queda silencioso (solo log)
+          if (sesionYaRegistrada) {
+            console.log(`[SUBBOT] +${numeroSub} conectado (sesion restaurada, sin spam)`)
+          } else if (!subAvisado(numeroSub)) {
             marcarSubAvisado(numeroSub)
             const destinoSock = opts.respuestaSock || sockPrincipal || sock
             const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
@@ -1907,6 +1918,18 @@ async function startBot(opts = {}) {
     if (!body && msg.message.templateButtonReplyMessage) {
       body = msg.message.templateButtonReplyMessage.selectedId || ""
     }
+    // S2: cache de videos de una sola vista ANTES del filtro de prefijo (no tienen prefijo)
+    try {
+      const vmVU = msg.message?.videoMessage
+      if (vmVU && vmVU.viewOnce === true) {
+        if (VISTA_UNICA.size > 80) { // prune simple
+          const ahoraVU = Date.now()
+          for (const [kVU, vVU] of VISTA_UNICA) if (ahoraVU > vVU.vence) VISTA_UNICA.delete(kVU)
+        }
+        VISTA_UNICA.set(`${from}|${sender}`, { videoMessage: vmVU, key: msg.key, vence: Date.now() + 600000 })
+      }
+    } catch {}
+
     const PREFIXES = PREFIJOS_BOT
     const prefixUsado = body ? PREFIXES.find((p) => body.startsWith(p)) : null
     if (!body || !prefixUsado) return
@@ -2102,7 +2125,7 @@ async function startBot(opts = {}) {
         return
       }
 
-      if (await ejecutarPlugin({ sock, from, msg, command, text, args, reply, sender, senderNumber, isOwner, isGroup, reaccionar: (emojis) => reaccionar(sock, from, msg, Array.isArray(emojis) ? emojis : [emojis]) })) return
+      if (await ejecutarPlugin({ sock, from, msg, command, text, args, reply, sender, senderNumber, isOwner, isGroup, vistaUnicaMap: VISTA_UNICA, reaccionar: (emojis) => reaccionar(sock, from, msg, Array.isArray(emojis) ? emojis : [emojis]) })) return
 
       switch (command) {
         case "menu":

@@ -348,13 +348,40 @@ function videoDeCtx(ctx) {
 
 const ES_URL = /^https?:\/\/\S+$/i
 
+// fallback vista unica: el video citado llega como stub SIN mediaKey
+// ("Cannot derive from empty media key") -> usamos el video completo
+// cacheado en index.js cuando paso por el chat (VISTA_UNICA)
+function fuenteDeCacheVistaUnica(ctx) {
+  try {
+    const mapa = ctx.vistaUnicaMap
+    if (!mapa || typeof mapa.get !== "function") return null
+    const clfave = `${ctx.from}|${ctx.senderNumber || ctx.sender}`
+    const c = mapa.get(clfave) || mapa.get(`${ctx.from}|${ctx.sender}`)
+    if (!c || Date.now() > c.vence) return null
+    if (!c.videoMessage?.mediaKey || !c.videoMessage.mediaKey.length) return null
+    return { tipo: "video", media: c.videoMessage, key: c.key || ctx.msg?.key }
+  } catch {}
+  return null
+}
+
 export default {
   comandos: ["s2"],
   ayuda: "s2 - sticker CON SONIDO (responde a un video; el audio se escucha al tocar el sticker)",
   secreto: false,
   ejecutar: async (ctx) => {
     try {
-      const fuente = videoDeCtx(ctx)
+      let fuente = videoDeCtx(ctx)
+      // sin fuente directa: probamos el cache (el usuario mando un video de
+      // una sola vista y escribio .s2 sin responder al mensaje)
+      if (!fuente) fuente = fuenteDeCacheVistaUnica(ctx)
+      // con fuente pero SIN mediaKey (stub citado): reponemos desde el cache
+      if (fuente && (!fuente.media?.mediaKey || !fuente.media.mediaKey.length)) {
+        const cacheVU = fuenteDeCacheVistaUnica(ctx)
+        if (cacheVU?.media?.mediaKey?.length) {
+          fuente.media = cacheVU.media
+          fuente.key = fuente.key?.id ? fuente.key : cacheVU.key
+        }
+      }
       let bufferVideo = null
       let msgOrigen = null
       if (fuente) {
