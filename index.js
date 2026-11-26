@@ -1017,6 +1017,8 @@ const MAX_SUBBOTS = 20
 const CARPETA_SUBBOTS = "subbots"
 let sockPrincipal = null
 const PEDIGO_CODIGO = new Map() // num -> { vence, token, codigo } (pairing unico: un codigo por ventana)
+// SPACK: modo pack de stickers — recolecta las proximas imagenes que mande el usuario y las devuelve como stickers
+const SPACK_PENDIENTES = new Map() // `${from}|${sender}` -> { restantes, total, buffers, vence }
 // Cooldown anti-flood: 2 segundos entre comandos por usuario (los owners no tienen cooldown)
 const COOLDOWN_COMANDOS = new Map()
 const VENTANA_CODIGO_MS = 600000 // ventana de 10 minutos para cada codigo de pairing
@@ -1438,6 +1440,36 @@ async function startBot(opts = {}) {
     const PREFIXES = PREFIJOS_BOT
     const prefixUsado = body ? PREFIXES.find((p) => body.startsWith(p)) : null
     if (!body || !prefixUsado) return
+
+    // modo .spack: si el usuario esta armando un pack y manda una imagen (sin comando), la colecciono
+    const claveSpack = `${from}|${sender}`
+    const packPendiente = SPACK_PENDIENTES.get(claveSpack)
+    if (packPendiente && msg.message.imageMessage) {
+      if (Date.now() > packPendiente.vence) {
+        SPACK_PENDIENTES.delete(claveSpack)
+      } else {
+        try {
+          const bufferPack = await downloadMediaMessage(msg, "buffer", {}, { logger: pino({ level: "silent" }) })
+          packPendiente.buffers.push(bufferPack)
+          packPendiente.restantes -= 1
+          if (packPendiente.restantes > 0) {
+            await sock.sendMessage(from, { text: `*${packPendiente.buffers.length}/${packPendiente.total}* recibidas \u2014 faltan *${packPendiente.restantes}*` }, { quoted: msg })
+            return
+          }
+          SPACK_PENDIENTES.delete(claveSpack)
+          await sock.sendMessage(from, { text: "\ud83d\udce6 Creando el pack de stickers..." }, { quoted: msg })
+          for (const bufferPackImg of packPendiente.buffers) {
+            try {
+              await sock.sendMessage(from, { sticker: await imageToSticker(bufferPackImg) }, { quoted: msg })
+            } catch {}
+          }
+        } catch (eSpack) {
+          console.error("Error en .spack:", eSpack?.message || eSpack)
+          await sock.sendMessage(from, { text: "\u274c Error al bajar una imagen del pack, mandala de nuevo" }, { quoted: msg })
+        }
+        return
+      }
+    }
 
     const args = body.slice(prefixUsado.length).trim().split(/ +/)
     const command = args.shift().toLowerCase()
@@ -3059,12 +3091,22 @@ case "video":
             await reply("Descargando de Instagram...")
             const { instagramDownload } = await import("./downloader.js")
             const { customApiInfo, customApiDownloadUrl, zetaCoreInstagram } = await import("./youtube.js")
-            let igApiFile = null
+            let igResultado = null
             try {
-              igApiFile = await zetaCoreInstagram(text, `zenith_instagram_${Date.now()}`)
+              igResultado = await zetaCoreInstagram(text, `zenith_instagram_${Date.now()}`)
             } catch (igZetaError) {
               console.log("ZETA-CORE instagram falló:", igZetaError?.message || igZetaError)
             }
+            if (igResultado?.tipo === "imagen") {
+              const archivosIg = (igResultado.files || []).slice(0, 5)
+              for (const archivoIg of archivosIg) {
+                await sock.sendMessage(from, { image: fs.readFileSync(archivoIg), caption: "ʙʏ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" }, { quoted: msg })
+                removeFile(archivoIg)
+              }
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
+              break
+            }
+            let igApiFile = igResultado?.file || null
             if (!igApiFile && customApiInfo()) {
               try {
                 igApiFile = await customApiDownloadUrl(text, "video", `zenith_instagram_${Date.now()}`)
@@ -4153,6 +4195,16 @@ case "video":
           if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
           await sock.groupSettingUpdate(from, "announcement")
           await reply("Grupo cerrado")
+          break
+
+        case "spack":
+        case "stickerspack":
+        case "packdestickers":
+          {
+            const nSpack = Math.min(Math.max(parseInt(args[0]) || 5, 2), 20)
+            SPACK_PENDIENTES.set(`${from}|${sender}`, { restantes: nSpack, total: nSpack, buffers: [], vence: Date.now() + 3 * 60 * 1000 })
+            await reply(`\ud83d\udce6 *Modo pack de stickers activado*\n\nMandame *${nSpack} imagenes* en el chat (tenes 3 minutos). Cuando llegue la ultima, te las devuelvo todas como stickers.`)
+          }
           break
 
         case "modo":

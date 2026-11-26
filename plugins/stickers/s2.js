@@ -299,14 +299,29 @@ async function mandarS2(ctx, webp, ogg, msgOrigen) {
 // Fuente del video: respuesta a un video/documento de video, video
 // directo (renombrado a txt), o link: .s2 <link>
 // ============================================================
+// desenrolla mensajes "ver una sola vez": cuando el video citado es de vista unica,
+// WhatsApp lo manda envuelto en viewOnceMessage(2/Extension) y hay que sacarlo del sobre
+function desenrollarVistaUnica(mm) {
+  let actual = mm
+  let guardia = 0
+  while (actual && guardia < 4) {
+    guardia++
+    const siguiente = actual.viewOnceMessage?.message || actual.viewOnceMessageV2?.message || actual.viewOnceMessageV2Extension?.message
+    if (!siguiente) break
+    actual = siguiente
+  }
+  return actual
+}
+
 function videoDeCtx(ctx) {
-  const m = ctx.msg?.message || {}
-  const q =
+  const m = desenrollarVistaUnica(ctx.msg?.message || {})
+  const qRaw =
     m.extendedTextMessage?.contextInfo?.quotedMessage ||
     m.imageMessage?.contextInfo?.quotedMessage ||
     m.videoMessage?.contextInfo?.quotedMessage ||
     m.documentMessage?.contextInfo?.quotedMessage ||
     null
+  const q = qRaw ? desenrollarVistaUnica(qRaw) : null
   const d = q || m
   // si viene citado, reconstruimos la key del mensaje citado desde el contextInfo
   const ci = q
