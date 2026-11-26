@@ -121,6 +121,100 @@ async function imageToSticker(buffer) {
   }
 }
 
+// ===== SPACK POR NOMBRE: busca packs reales en Sticker.ly y los manda como stickers =====
+const SL_UA = "androidapp.stickerly/3.17.0 (Redmi 7; U; Android 29; en-US; us;)"
+const SL_FILTRO = { extendSearchResult: false, minStickerCount: 3, stickerType: "ALL", languages: ["ALL"], sortBy: "RECOMMENDED", searchBy: "ALL" }
+
+async function stickerlyBuscarPacks(keyword) {
+  const r = await fetch("https://api.sticker.ly/v4/stickerPack/smartSearch", {
+    method: "POST",
+    headers: { "User-Agent": SL_UA, "Content-Type": "application/json", "x-duid": Math.random().toString(16).slice(2, 18).padEnd(16, "0") },
+    body: JSON.stringify({ keyword: String(keyword).slice(0, 60), enabledKeywordSearch: true, filter: SL_FILTRO }),
+    signal: AbortSignal.timeout(20000)
+  })
+  const j = await r.json().catch(() => null)
+  const packs = j?.result?.stickerPacks
+  if (Array.isArray(packs) && packs.length) return packs
+  if (!j || j.error) throw new Error(typeof j?.error?.internalErrorMessage === "string" && j.error.internalErrorMessage ? j.error.internalErrorMessage : "sin resultados")
+  // fallback defensivo: buscar objetos de pack en cualquier nivel de la respuesta
+  const hallados = []
+  const buscar = (o, d = 0) => {
+    if (!o || typeof o !== "object" || d > 4 || hallados.length) return
+    if (Array.isArray(o)) { for (const x of o) buscar(x, d + 1); return }
+    if ("resourceUrlPrefix" in o || "shareUrl" in o || "stickerPackId" in o) { hallados.push(o); return }
+    for (const k of Object.keys(o)) buscar(o[k], d + 1)
+  }
+  buscar(j)
+  return hallados
+}
+
+async function stickerlyUrlsDePack(p) {
+  if (p.resourceUrlPrefix && Array.isArray(p.resourceFiles) && p.resourceFiles.length) {
+    return p.resourceFiles.map((f) => p.resourceUrlPrefix + f)
+  }
+  const ids = [String(p.shareUrl || "").split("/").pop(), p.packId, p.stickerPackId, p.id].filter(Boolean)
+  for (const id of ids) {
+    try {
+      const r = await fetch(`https://api.sticker.ly/v3.1/stickerPack/${encodeURIComponent(String(id))}`, { headers: { "User-Agent": SL_UA }, signal: AbortSignal.timeout(20000) })
+      if (!r.ok) continue
+      const res = (await r.json().catch(() => null))?.result
+      if (res?.stickers?.length && res.resourceUrlPrefix) return res.stickers.map((x) => res.resourceUrlPrefix + x.fileName)
+    } catch {}
+  }
+  return []
+}
+
+// webp listo = se manda tal cual (animado hasta 500KB / estatico hasta 100KB); otro formato = convertir con imageToSticker
+async function stickerListo(buffer) {
+  const esWebp = buffer.subarray(0, 4).toString("latin1") === "RIFF" && buffer.subarray(8, 12).toString("latin1") === "WEBP"
+  if (esWebp) {
+    const animado = buffer.includes("ANIM")
+    return buffer.length <= (animado ? 500 * 1024 : 100 * 1024) ? buffer : null
+  }
+  try { return await imageToSticker(buffer) } catch { return null }
+}
+
+async function spackPorNombre(sock, from, msg, nombre, reply) {
+  await reply(`\ud83d\udd0d Buscando stickers de *${nombre}* en Sticker.ly...`)
+  let packs = []
+  try {
+    packs = await stickerlyBuscarPacks(nombre)
+  } catch (eSpack) {
+    await reply(`No encontr\u00e9 packs de *${nombre}* (${String(eSpack?.message || eSpack).slice(0, 60)})`)
+    return
+  }
+  if (!packs.length) {
+    await reply(`No encontr\u00e9 packs de *${nombre}* \ud83d\ude45\nProb\u00e1 con otra palabra (en ingles hay muchos m\u00e1s): \`.spack cats\``)
+    return
+  }
+  const palabras = String(nombre).toLowerCase().split(/\s+/).filter((w) => w.length > 1)
+  const matchea = (t) => {
+    const limpio = String(t || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ")
+    const min = Math.max(1, Math.ceil(palabras.length / 2))
+    return palabras.filter((pal) => limpio.includes(pal)).length >= min
+  }
+  const ordenados = [...packs].sort((a, b) => (matchea(b.name) ? 1 : 0) - (matchea(a.name) ? 1 : 0))
+  const packElegido = ordenados[0]
+  const urls = await stickerlyUrlsDePack(packElegido).catch(() => [])
+  if (!urls.length) {
+    await reply("El pack no tiene stickers descargables, prob\u00e1 con otra b\u00fasqueda")
+    return
+  }
+  await sock.sendMessage(from, { text: `\ud83d\udce6 *${String(packElegido.name || nombre).slice(0, 60)}*\n\ud83c\udfa8 Sticker pack con ${urls.length} stickers \u2014 mandando...` }, { quoted: msg })
+  let enviados = 0
+  for (const url of urls.slice(0, 12)) {
+    try {
+      const r = await fetch(url, { signal: AbortSignal.timeout(20000) })
+      if (!r.ok) continue
+      const sticker = await stickerListo(Buffer.from(await r.arrayBuffer()))
+      if (!sticker) continue
+      await sock.sendMessage(from, { sticker })
+      enviados++
+    } catch {}
+  }
+  if (!enviados) await reply("No pude bajar los stickers del pack, prob\u00e1 de nuevo \ud83d\udd01")
+}
+
 async function primerFrameVideo(buffer) {
   const inFile = tempFile("mp4")
   const outFile = tempFile("png")
@@ -4200,10 +4294,12 @@ case "video":
         case "spack":
         case "stickerspack":
         case "packdestickers":
-          {
+          if (text.trim()) {
+            await spackPorNombre(sock, from, msg, text.trim(), reply)
+          } else {
             const nSpack = Math.min(Math.max(parseInt(args[0]) || 5, 2), 20)
             SPACK_PENDIENTES.set(`${from}|${sender}`, { restantes: nSpack, total: nSpack, buffers: [], vence: Date.now() + 3 * 60 * 1000 })
-            await reply(`\ud83d\udce6 *Modo pack de stickers activado*\n\nMandame *${nSpack} imagenes* en el chat (tenes 3 minutos). Cuando llegue la ultima, te las devuelvo todas como stickers.`)
+            await reply(`\ud83d\udce6 *Modo pack de stickers activado*\n\nMandame *${nSpack} imagenes* en el chat (tenes 3 minutos). Cuando llegue la ultima, te las devuelvo todas como stickers.\n\n(Con nombre tambi\u00e9n funca: \`.spack gatitos\` = pack de stickers de gatos)`)
           }
           break
 
