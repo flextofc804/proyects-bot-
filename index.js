@@ -1098,6 +1098,20 @@ function prefijosBotDesdeDb() {
 }
 const PREFIJOS_BOT = prefijosBotDesdeDb()
 
+// Pie social del menú: Instagram + grupo oficial (aparece al final de todo .menu)
+function pieSocialMenu() {
+  return [
+    "",
+    "╭─⟮ ✦ *SIGUEME* ✦ ⟕",
+    "│ 📸 *Instagram* » https://www.instagram.com/en_zowx._vase",
+    "│ ⚡ Sígueme para más actualizaciones y comandos",
+    "│",
+    "│ 💬 *Grupo oficial del bot:*",
+    "│ 🚀 https://chat.whatsapp.com/HurikkSgXWbIdxH1S99MUz?s=cl&p=a&iam=2",
+    "╰─────────⟮ ⚔️ ⟕"
+  ].join("\n")
+}
+
 function renderMenuHome() {
   const lines = []
   lines.push("╭───────────────────────╮")
@@ -1117,7 +1131,7 @@ function renderMenuHome() {
   lines.push("╰───────────────────────╯")
   lines.push(`  ✦ ${config.prefix}menu <categoría>  ▸  ver comandos`)
   lines.push(`  ✦ ${config.prefix}menu todos  ▸  catálogo completo`)
-  return lines.join("\n")
+  return lines.join("\n") + "\n" + pieSocialMenu()
 }
 
 function renderMenuCategory(key) {
@@ -1134,7 +1148,7 @@ function renderMenuCategory(key) {
   }
   lines.push("╰───────────────────────╯")
   lines.push(`  ✦ ${config.prefix}menu  ▸  volver al inicio`)
-  return lines.join("\n")
+  return lines.join("\n") + "\n" + pieSocialMenu()
 }
 
 function renderMenuEverything() {
@@ -1156,7 +1170,7 @@ function renderMenuEverything() {
   }
   lines.push("")
   lines.push(`  ✦ ${config.prefix}menu <categoría>  ▸  una sola categoría`)
-  return lines.join("\n")
+  return lines.join("\n") + "\n" + pieSocialMenu()
 }
 
 async function enviarTextoMenu(sock, from, msg, text, withImage = false) {
