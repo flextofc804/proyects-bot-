@@ -1451,6 +1451,33 @@ const MAX_SUBBOTS = 20
 const CARPETA_SUBBOTS = "subbots"
 let sockPrincipal = null
 const PEDIGO_CODIGO = new Map() // num -> { vence, token, codigo } (pairing unico: un codigo por ventana)
+// Anti-spam: el panel "SUB-BOT CONECTADO" se manda UNA sola vez por vinculo
+// (persistido en db.settings.subbotsAvisados). Si NO, cada reconexion
+// (blip de red, 515, etc.) re-mandaba el panel y el chat se llenaba de spam.
+function subAvisado(numeroSub) {
+  try { return (db.settings?.subbotsAvisados || []).includes(numeroSub) } catch { return false }
+}
+function marcarSubAvisado(numeroSub) {
+  try {
+    if (!db.settings) db.settings = {}
+    const avisados = new Set(db.settings.subbotsAvisados || [])
+    if (!avisados.has(numeroSub)) {
+      avisados.add(numeroSub)
+      db.settings.subbotsAvisados = [...avisados]
+      try { saveDB() } catch {}
+    }
+  } catch {}
+}
+function desavisarSub(numeroSub) {
+  try {
+    if (!db.settings?.subbotsAvisados?.length) return
+    const nueva = db.settings.subbotsAvisados.filter((n) => n !== numeroSub)
+    if (nueva.length !== db.settings.subbotsAvisados.length) {
+      db.settings.subbotsAvisados = nueva
+      try { saveDB() } catch {}
+    }
+  } catch {}
+}
 // SPACK: modo pack de stickers — recolecta las proximas imagenes que mande el usuario y las devuelve como stickers
 const SPACK_PENDIENTES = new Map() // `${from}|${sender}` -> { restantes, total, buffers, vence }
 // Cooldown anti-flood: 2 segundos entre comandos por usuario (los owners no tienen cooldown)
@@ -1725,6 +1752,7 @@ async function startBot(opts = {}) {
           try { fs.rmSync(sessionDir, { recursive: true, force: true }) } catch {}
           SUBBOTS.delete(numeroSub)
           PEDIGO_CODIGO.delete(numeroSub)
+          desavisarSub(numeroSub) // si se vuelve a vincular, el aviso llega una vez de nuevo
           const destinoSock = opts.respuestaSock || sockPrincipal || sock
           const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
           if (destinoSock?.sendMessage) {
@@ -1749,6 +1777,7 @@ async function startBot(opts = {}) {
             destinoSock2.sendMessage(destinoJid2, { text: panel(`VINCULACION INCOMPLETA`, `> @${numeroSub} el codigo no se ingreso a tiempo \u23f3\n> Pedite otro con un solo comando:\n> .code ${numeroSub}\n> (llega en un mensaje aparte, tenes 10 minutos)`) }).catch(() => {})
             }
             console.log(`[SUBBOT] sesion sin completar para +${numeroSub}: limpiada, sin reintentos automaticos (anti-bucle)`)
+            desavisarSub(numeroSub)
             return
           }
           const tokenViejo = opts.token
@@ -1797,13 +1826,20 @@ async function startBot(opts = {}) {
         PEDIGO_CODIGO.delete(numeroSub)
         console.log(`[SUBBOT] +${numeroSub} conectado como sub-bot ✅`)
         if (!previa.conectado) {
-          const destinoSock = opts.respuestaSock || sockPrincipal || sock
-          const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
-          if (destinoSock?.sendMessage) {
-            destinoSock.sendMessage(destinoJid, { text: panel(`SUB-BOT CONECTADO`, `> ✅ Fuiste vinculado como sub-bot
+          // anti-spam: el aviso de conexion solo la PRIMERA vez que se vincula
+          // este numero; las reconexiones quedan silenciosas (solo log)
+          if (!subAvisado(numeroSub)) {
+            marcarSubAvisado(numeroSub)
+            const destinoSock = opts.respuestaSock || sockPrincipal || sock
+            const destinoJid = opts.respuestaJid || `${numeroSub}@s.whatsapp.net`
+            if (destinoSock?.sendMessage) {
+              destinoSock.sendMessage(destinoJid, { text: panel(`SUB-BOT CONECTADO`, `> ✅ Fuiste vinculado como sub-bot
 > Ya podes usar TODOS los comandos desde este numero
 > (descargas, menu, juegos, todo)
 > Para ver la lista: .bots`) }).catch(() => {})
+            }
+          } else {
+            console.log(`[SUBBOT] +${numeroSub} reconectado (aviso ya enviado, sin spam)`)
           }
         }
       } else {
