@@ -925,6 +925,19 @@ function esMediaReal(file, kind) {
       if (head.length > 3 && head.subarray(0, 3).toString("latin1") === "FLV") return true
       return false
     }
+    // imagen: jpeg (FFD8FF), png (89 50 4E 47), webp (RIFF..WEBP), gif (GIF8), heic/avif (ftyp)
+    if (kind === "imagen") {
+      if (head.length > 3 && head[0] === 0xff && head[1] === 0xd8) return true
+      if (head.length > 4 && head[0] === 0x89 && head.subarray(1, 4).toString("latin1") === "PNG") return true
+      if (head.length > 12 && head.subarray(0, 4).toString("latin1") === "RIFF" && head.subarray(8, 12).toString("latin1") === "WEBP") return true
+      if (head.length > 4 && head.subarray(0, 3).toString("latin1") === "GIF") return true
+      // heic/avif: comparten ftyp con mp4, hay que mirar la marca (offset 8..12)
+      if (head.length > 12 && head.subarray(4, 8).toString("latin1") === "ftyp") {
+        const marca = head.subarray(8, 12).toString("latin1")
+        if (/^(hei|mif|msf|avif|heix|hevc)/.test(marca)) return true
+      }
+      return false
+    }
     // audio: mp3(ID3 o 0xFFEx), ogg (OggS), flac (fLaC), wav (RIFF..WAVE), m4a (ftyp)
     if (kind === "audio") {
       if (head.length > 3 && head.subarray(0, 3).toString("latin1") === "ID3") return true
@@ -971,7 +984,7 @@ async function downloadApiFile(url, destination, kind, extraHeaders = {}) {
   await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(finalPath))
   if (!esMediaReal(finalPath, kind)) {
     try { fs.unlinkSync(finalPath) } catch {}
-    throw new Error("lo que devolvi\u00f3 el enlace no es un video/audio v\u00e1lido (p\u00e1gina de error o login de facebook)")
+    throw new Error("lo que devolvi\u00f3 el enlace no es un video/audio/imagen v\u00e1lido (p\u00e1gina de error o login)")
   }
   return finalPath
 }
@@ -1220,21 +1233,60 @@ function zetaCorePickMedia(data) {
   return data?.descarga_directa || data?.link || data?.url || fromLinks[0] || null
 }
 
+function zetaCoreCandidatosMedia(data) {
+  const vistos = new Set()
+  const salida = []
+  const empujar = (u) => {
+    const cand = String(u || "")
+    if (/^https?:\/\//.test(cand) && !vistos.has(cand)) { vistos.add(cand); salida.push(cand) }
+  }
+  empujar(data?.descarga_directa); empujar(data?.link); empujar(data?.url); empujar(data?.imagen); empujar(data?.image)
+  for (const lista of [data?.links, data?.media, data?.images, data?.imagenes, data?.files]) {
+    if (Array.isArray(lista)) for (const item of lista) empujar(typeof item === "string" ? item : item?.url || item?.imagen || item?.image)
+  }
+  if (!salida.length && (data?.result || data?.data)) return zetaCoreCandidatosMedia(data?.result || data?.data)
+  return salida
+}
+
+const ES_URL_IMAGEN = /\.(jpe?g|png|webp|gif|heic)(\?|#|$)/i
+
+// IG: los reels/imagenes se resuelven distinto. Devuelve { file, tipo: "video" }
+// o { files: [...], tipo: "imagen" } (posts con 1 o mas fotos, sin recomprimir = calidad maxima)
 async function zetaCoreInstagram(url, prefix) {
+  let dlError = null
   try {
-    return await zetaCoreDlRetry(url, "instagram", prefix)
-  } catch (dlError) {
-    const dlMsg = String(dlError?.message || dlError)
-    const data = await zetaCoreJson("/instagram", new URLSearchParams({ query: url }))
-    const direct = zetaCorePickMedia(data)
-    if (!direct) throw new Error("el post no tiene media descargable")
+    const file = await zetaCoreDlRetry(url, "instagram", prefix)
+    return { file, tipo: "video" }
+  } catch (e) {
+    dlError = e
+    if (String(e?.message || e).includes("falta la clave")) throw e
+  }
+  const data = await zetaCoreJson("/instagram", new URLSearchParams({ query: url }))
+  const candidatos = zetaCoreCandidatosMedia(data)
+  if (!candidatos.length) throw dlError || new Error("el post no tiene media descargable")
+  const bajados = []
+  for (const directo of candidatos) {
+    if (bajados.length >= 5) break
+    const tipoCand = ES_URL_IMAGEN.test(directo) ? "imagen" : "video"
     try {
-      return await zetaCoreSaveFile(String(direct), prefix, "video")
+      const file = await zetaCoreSaveFile(directo, `${prefix}_${bajados.length}`, tipoCand)
+      bajados.push({ file, tipo: tipoCand })
     } catch {
-      if (dlMsg.includes("falta la clave")) throw dlError
-      throw new Error("el post no tiene media descargable")
+      // si lo intentamos como video pero era una foto (o al reves), probamos el otro tipo
+      try {
+        const file = await zetaCoreSaveFile(directo, `${prefix}_${bajados.length}`, tipoCand === "video" ? "imagen" : "video")
+        bajados.push({ file, tipo: tipoCand === "video" ? "imagen" : "video" })
+      } catch {}
     }
   }
+  if (!bajados.length) throw dlError || new Error("el post no tiene media descargable")
+  const video = bajados.find((b) => b.tipo === "video")
+  if (video) {
+    // la API de /dl entrega el video en la mejor calidad disponible; conservarlo tal cual
+    for (const b of bajados) if (b !== video) removeFile(b.file)
+    return { file: video.file, tipo: "video" }
+  }
+  return { tipo: "imagen", files: bajados.filter((b) => b.tipo === "imagen").map((b) => b.file) }
 }
 
 async function zetaCoreFacebook(url, prefix) {
