@@ -384,6 +384,7 @@ export default {
       }
       let bufferVideo = null
       let msgOrigen = null
+      let linkSocial = null
       if (fuente) {
         const { downloadMediaMessage } = await import("@whiskeysockets/baileys")
         // downloadMediaMessage valida por el nombre real del campo del mensaje
@@ -400,16 +401,50 @@ export default {
           key: fuente.key
         }
       } else if (ctx.text && ES_URL.test(ctx.text.trim())) {
-        const axios = (await import("axios")).default
-        const resp = await axios.get(ctx.text.trim(), {
-          responseType: "arraybuffer",
-          timeout: 60000,
-          maxContentLength: 100 * 1024 * 1024
-        })
-        bufferVideo = Buffer.from(resp.data)
+        const urlVideo = ctx.text.trim()
+        const esSocial = /(tiktok\.com|instagram\.com|facebook\.com|fb\.watch|twitter\.com|x\.com)/i.test(urlVideo)
+        if (esSocial) {
+          // links de redes: se bajan con ZETA-CORE (el fetch directo devuelve el
+          // HTML de TikTok/IG y ffmpeg falla con "Invalid data")
+          try {
+            const yt = await import("../../youtube.js")
+            let archivoSocial = null
+            if (/tiktok\.com/i.test(urlVideo)) archivoSocial = await yt.zetaCoreTiktok(urlVideo, `s2_tt_${Date.now()}`)
+            else if (/instagram\.com/i.test(urlVideo)) archivoSocial = await yt.zetaCoreInstagram(urlVideo, `s2_ig_${Date.now()}`)
+            else if (/facebook\.com|fb\.watch/i.test(urlVideo)) archivoSocial = await yt.zetaCoreFacebook(urlVideo, `s2_fb_${Date.now()}`)
+            else archivoSocial = await yt.zetaCoreX(urlVideo, `s2_x_${Date.now()}`)
+            if (archivoSocial?.tipo === "album" && Array.isArray(archivoSocial.items)) {
+              const primero = archivoSocial.items.find((it) => it.tipo === "video") || archivoSocial.items[0] || null
+              for (const it of archivoSocial.items) if (it !== primero) borrarS2(it.file)
+              archivoSocial = primero?.file || null
+            } else if (archivoSocial?.file) {
+              archivoSocial = archivoSocial.file
+            }
+            if (archivoSocial) {
+              bufferVideo = fs.readFileSync(archivoSocial)
+              borrarS2(archivoSocial)
+              linkSocial = urlVideo
+            }
+          } catch (eSocial) {
+            console.log("s2 link social fallo:", eSocial?.message || eSocial)
+          }
+        }
+        if (!bufferVideo && !esSocial) {
+          const axios = (await import("axios")).default
+          const resp = await axios.get(urlVideo, {
+            responseType: "arraybuffer",
+            timeout: 60000,
+            maxContentLength: 100 * 1024 * 1024
+          })
+          bufferVideo = Buffer.from(resp.data)
+        }
       }
       if (!bufferVideo) {
-        await ctx.reply("Responde a un *video* con *.s2* para crear un sticker con sonido 🔊\n(también podés mandar un link con .s2 <link>)")
+        if (linkSocial) {
+          await ctx.reply("⚠️ No pude descargar el video de ese link 😿 probá de nuevo en un rato, o mandame el video al chat y respondelo con *.s2*")
+        } else {
+          await ctx.reply("Responde a un *video* con *.s2* para crear un sticker con sonido 🔊\n(también podés mandar un link con .s2 <link>)")
+        }
         return
       }
       try { await ctx.reaccionar?.("🔊") } catch {}
@@ -428,12 +463,12 @@ export default {
         await mandarS2(ctx, webp, ogg, msgOrigen)
       } catch (e) {
         // fallback seguro: sticker animado normal (como .s) si la parte con sonido falla
-        await ctx.reply(`⚠️ El sticker con sonido falló (${String(e?.message || e).slice(0, 130)}), mando el sticker normal...`)
+        await ctx.reply("⚠️ El sticker con sonido falló 😿 te mando el sticker normal...")
         await ctx.sock.sendMessage(ctx.from, { sticker: webp }, { quoted: ctx.msg })
       }
     } catch (e) {
       try {
-        await ctx.reply(`Error creando el sticker con sonido: ${String(e?.message || e).slice(0, 160)}`)
+        await ctx.reply("⚠️ No se pudo crear el sticker con sonido 😿 probá con otro video, o mandame el video al chat y respondelo con *.s2*")
       } catch {}
     }
   }
