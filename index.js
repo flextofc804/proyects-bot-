@@ -2058,10 +2058,14 @@ async function startBot(opts = {}) {
     // SEGURIDAD: en chat PRIVADO solo se permite .code (conectar sub-bot);
     // todos los demas comandos funcionan SOLO en grupos (los owners no tienen limite)
     if (command && !isGroup && !isOwner && !COMANDOS_PRIVADO_OK.has(command)) {
-      const ahoraAviso = Date.now()
-      if (ahoraAviso - (AVISO_PRIVADO.get(sender) || 0) > 30000) {
-        AVISO_PRIVADO.set(sender, ahoraAviso)
-        await reply(`${panel(`MODO GRUPOS`, `> Los comandos solo funcionan en grupos \ud83d\udeab\n> En privado solo se permite *.code* para conectar un sub-bot \ud83d\udd10`)}`)
+      // aviso UNA SOLA VEZ por usuario (persistido en la db, no vuelve ni reiniciando)
+      if (!db.settings.avisoPrivado) db.settings.avisoPrivado = {}
+      if (!db.settings.avisoPrivado[sender]) {
+        db.settings.avisoPrivado[sender] = true
+        saveDB()
+        try {
+          await reply(`${panel(`MODO GRUPOS`, `> Los comandos solo funcionan en grupos \ud83d\udeab\n> En privado solo se permite *.code* para conectar un sub-bot \ud83d\udd10`)}`)
+        } catch {}
       }
       return
     }
