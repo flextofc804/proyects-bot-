@@ -3591,8 +3591,66 @@ case "video":
         case "reel":
         case "ig":
           if (!text) {
-            await reply("Uso: #instagram <link>")
+            await reply("Uso: #instagram <link>  (o varios links separados por espacio)")
             return
+          }
+          // VARIOS LINKS de una vez: .ig <link1> <link2> ... -> baja cada uno y los manda TODOS como album
+          const urlsIg = String(text).split(/\s+/).filter((u) => /^https?:\/\//i.test(u))
+          if (urlsIg.length > 1) {
+            try {
+              await reply(`Descargando ${urlsIg.length} publicaciones de Instagram... \ud83d\udce5`)
+              const { instagramDownload } = await import("./downloader.js")
+              const { zetaCoreInstagram } = await import("./youtube.js")
+              const itemsIg = []
+              for (const urlIg of urlsIg.slice(0, 10)) {
+                let itemIg = null
+                try {
+                  const rIg = await instagramDownload(urlIg)
+                  if (rIg?.type === "video" && rIg.file) itemIg = { tipo: "video", file: rIg.file }
+                  else if (rIg?.type === "album" && rIg.files?.length) {
+                    const primeroIg = rIg.videos?.[0] || rIg.files[0]
+                    itemIg = { tipo: rIg.videos?.includes(primeroIg) ? "video" : "image", file: primeroIg }
+                    for (const fIg of rIg.files) if (fIg !== primeroIg) removeFile(fIg)
+                  } else if (rIg?.type === "images" && rIg.files?.length) {
+                    itemIg = { tipo: "image", file: rIg.files[0] }
+                    for (const fIg of rIg.files) if (fIg !== itemIg.file) removeFile(fIg)
+                  }
+                } catch (eScrape) {
+                  console.log("ig multiple scraping fall\u00f3:", urlIg, eScrape?.message || eScrape)
+                }
+                if (!itemIg) {
+                  try {
+                    const zIg = await zetaCoreInstagram(urlIg, `zenith_ig_${Date.now()}`)
+                    if (zIg?.tipo === "video" && zIg.file) itemIg = { tipo: "video", file: zIg.file }
+                    else if (zIg?.tipo === "imagen" && zIg.files?.length) itemIg = { tipo: "image", file: zIg.files[0] }
+                    else if (zIg?.tipo === "album" && zIg.items?.length) {
+                      const primeroIg = zIg.items.find((it) => it.tipo === "video") || zIg.items[0]
+                      itemIg = { tipo: primeroIg.tipo, file: primeroIg.file }
+                      for (const itIg of zIg.items) if (itIg !== primeroIg) removeFile(itIg.file)
+                    }
+                  } catch (eZeta) {
+                    console.log("ig multiple ZETA-CORE fall\u00f3:", urlIg, eZeta?.message || eZeta)
+                  }
+                }
+                if (itemIg) itemsIg.push(itemIg)
+              }
+              if (!itemsIg.length) throw new Error("sin media descargable")
+              for (const [i, itemIg2] of itemsIg.entries()) {
+                const captionIg = i === 0 ? "\u0299\u028f E\u0280\u1d22\u1d00B\u1d0f\u1d1b-MD/OFC - Instagram" : undefined
+                const bufferIg = fs.readFileSync(itemIg2.file)
+                if (itemIg2.tipo === "video") {
+                  await sock.sendMessage(from, { video: bufferIg, mimetype: "video/mp4", ...(captionIg ? { caption: captionIg } : {}) }, { quoted: msg })
+                } else {
+                  await sock.sendMessage(from, { image: bufferIg, ...(captionIg ? { caption: captionIg } : {}) }, { quoted: msg })
+                }
+                removeFile(itemIg2.file)
+              }
+              reaccionar(sock, from, msg, ["\u2705"]).catch(() => {})
+            } catch (eMulti) {
+              console.log("Error en ig m\u00faltiple:", eMulti?.message || eMulti)
+              await reply("No pude descargar los links \ud83d\ude3f prob\u00e1 de nuevo")
+            }
+            break
           }
           try {
             await reply("Descargando de Instagram...")
