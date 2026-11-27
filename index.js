@@ -3639,9 +3639,9 @@ case "video":
                 const captionIg = i === 0 ? "\u0299\u028f E\u0280\u1d22\u1d00B\u1d0f\u1d1b-MD/OFC - Instagram" : undefined
                 const bufferIg = fs.readFileSync(itemIg2.file)
                 if (itemIg2.tipo === "video") {
-                  await sock.sendMessage(from, { video: bufferIg, mimetype: "video/mp4", ...(captionIg ? { caption: captionIg } : {}) }, { quoted: msg })
+                  await sock.sendMessage(from, { video: bufferIg, mimetype: "video/mp4" }, { quoted: msg })
                 } else {
-                  await sock.sendMessage(from, { image: bufferIg, ...(captionIg ? { caption: captionIg } : {}) }, { quoted: msg })
+                  await sock.sendMessage(from, { image: bufferIg }, { quoted: msg })
                 }
                 removeFile(itemIg2.file)
               }
@@ -3653,7 +3653,6 @@ case "video":
             break
           }
           try {
-            await reply("Descargando de Instagram...")
             const { instagramDownload } = await import("./downloader.js")
             const { customApiInfo, customApiDownloadUrl, zetaCoreInstagram } = await import("./youtube.js")
             // 1) scraping local: es el que ve el CARRUSEL completo con los videos
@@ -3672,13 +3671,13 @@ case "video":
                 if (igResult.videos?.includes(archivoAlbum)) {
                   await sock.sendMessage(
                     from,
-                    { video: bufferAlbum, mimetype: "video/mp4", ...(captionAlbum ? { caption: captionAlbum } : {}) },
+                    { video: bufferAlbum, mimetype: "video/mp4" },
                     { quoted: msg }
                   )
                 } else {
                   await sock.sendMessage(
                     from,
-                    { image: bufferAlbum, ...(captionAlbum ? { caption: captionAlbum } : {}) },
+                    { image: bufferAlbum },
                     { quoted: msg }
                   )
                 }
@@ -3720,13 +3719,13 @@ case "video":
                 if (itemAlbum.tipo === "video") {
                   await sock.sendMessage(
                     from,
-                    { video: bufferAlbum, mimetype: "video/mp4", ...(captionAlbum ? { caption: captionAlbum } : {}) },
+                    { video: bufferAlbum, mimetype: "video/mp4" },
                     { quoted: msg }
                   )
                 } else {
                   await sock.sendMessage(
                     from,
-                    { image: bufferAlbum, ...(captionAlbum ? { caption: captionAlbum } : {}) },
+                    { image: bufferAlbum },
                     { quoted: msg }
                   )
                 }
@@ -3738,7 +3737,7 @@ case "video":
             if (igResultado?.tipo === "imagen") {
               const archivosIg = (igResultado.files || []).slice(0, 5)
               for (const archivoIg of archivosIg) {
-                await sock.sendMessage(from, { image: fs.readFileSync(archivoIg), caption: "ʙʏ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" }, { quoted: msg })
+                await sock.sendMessage(from, { image: fs.readFileSync(archivoIg) }, { quoted: msg })
                 removeFile(archivoIg)
               }
               reaccionar(sock, from, msg, ["✅"]).catch(() => {})
