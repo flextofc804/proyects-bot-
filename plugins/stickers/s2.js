@@ -428,6 +428,29 @@ export default {
           } catch (eSocial) {
             console.log("s2 link social fallo:", eSocial?.message || eSocial)
           }
+          if (!bufferVideo) {
+            // scraping local de reserva: resuelve los links cortos (vt.tiktok.com)
+            // y baja el mp4 real directo del CDN
+            try {
+              const dl = await import("../../downloader.js")
+              if (/tiktok\.com/i.test(urlVideo)) {
+                const tt = await dl.tiktokDownload(urlVideo)
+                if (tt?.type === "video" && tt.file) {
+                  bufferVideo = fs.readFileSync(tt.file)
+                  borrarS2(tt.file)
+                }
+              } else if (/instagram\.com/i.test(urlVideo)) {
+                const ig = await dl.instagramDownload(urlVideo)
+                if (ig?.type === "video" && ig.file) {
+                  bufferVideo = fs.readFileSync(ig.file)
+                  borrarS2(ig.file)
+                }
+              }
+            } catch (eDl) {
+              console.log("s2 scraping directo fallo:", eDl?.message || eDl)
+            }
+          }
+          linkSocial = urlVideo
         }
         if (!bufferVideo && !esSocial) {
           const axios = (await import("axios")).default

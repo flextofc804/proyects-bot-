@@ -371,14 +371,21 @@ async function instagramFromGraphql(shortcode) {
 
     if (media.video_url) return { type: "video", url: decodeEscaped(media.video_url) }
 
+    // carrusel (album "1/8"): cada hijo es un elemento con su propio tipo;
+    // hay que devolverlos POR SEPARADO para bajar los videos como mp4
     const children = media.edge_sidecar_to_children?.edges || []
-    const urls = children
-      .map((edge) => edge?.node?.video_url || edge?.node?.display_url)
+    const items = children
+      .map((edge) => {
+        const videoUrl = edge?.node?.video_url ? decodeEscaped(edge.node.video_url) : null
+        const displayUrl = edge?.node?.display_url ? decodeEscaped(edge.node.display_url) : null
+        if (videoUrl) return { video: true, url: videoUrl }
+        if (displayUrl) return { video: false, url: displayUrl }
+        return null
+      })
       .filter(Boolean)
-      .map(decodeEscaped)
-    if (urls.length > 0) {
-      const hasVideo = children.some((edge) => edge?.node?.video_url)
-      return { type: hasVideo ? "video" : "image", urls: [...new Set(urls)].slice(0, 10) }
+    if (items.length > 1) return { type: "album", items }
+    if (items.length === 1) {
+      return items[0].video ? { type: "video", url: items[0].url } : { type: "image", urls: [items[0].url] }
     }
     if (media.display_url) return { type: "image", urls: [decodeEscaped(media.display_url)] }
   } catch (e) {}
@@ -449,6 +456,22 @@ export async function instagramDownload(url) {
     const destination = uniqueName("instagram", "mp4")
     await downloadToFile(found.url, destination, headers)
     return { type: "video", file: destination }
+  }
+
+  // carrusel (album): bajar cada elemento como mp4 (video) o jpg (foto), en orden
+  if (found.type === "album" && Array.isArray(found.items)) {
+    const files = []
+    const videos = []
+    for (const item of found.items.slice(0, 10)) {
+      try {
+        const destination = uniqueName("instagram", item.video ? "mp4" : "jpg")
+        await downloadToFile(item.url, destination, headers)
+        files.push(destination)
+        if (item.video) videos.push(destination)
+      } catch (e) {}
+    }
+    if (files.length === 0) throw new Error("no se pudo descargar el album")
+    return { type: "album", files, videos }
   }
 
   const urls = found.urls || [found.url].filter(Boolean)
