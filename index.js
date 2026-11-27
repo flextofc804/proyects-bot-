@@ -1501,6 +1501,10 @@ const VISTA_UNICA = new Map() // `${from}|${sender}` -> { videoMessage, key, ven
 // Cooldown anti-flood: 2 segundos entre comandos por usuario (los owners no tienen cooldown)
 const COOLDOWN_COMANDOS = new Map()
 const VENTANA_CODIGO_MS = 600000 // ventana de 10 minutos para cada codigo de pairing
+// SEGURIDAD: comandos permitidos en chat PRIVADO (solo conectar sub-bot); todo lo
+// demas funciona SOLO en grupos. Aplica al bot principal y a los sub-bots.
+const COMANDOS_PRIVADO_OK = new Set(["code", "qr", "jadibot", "serbot", "subbot"])
+const AVISO_PRIVADO = new Map() // sender -> timestamp del ultimo aviso (anti-spam)
 
 function formatearCodigoVinculacion(codigo) {
   return String(codigo || "").match(/.{1,4}/g)?.join("-") || String(codigo || "")
@@ -2049,6 +2053,17 @@ async function startBot(opts = {}) {
       if (Date.now() - ultimoComando < 2000) return
       if (COOLDOWN_COMANDOS.size > 5000) COOLDOWN_COMANDOS.clear()
       COOLDOWN_COMANDOS.set(claveCooldown, Date.now())
+    }
+
+    // SEGURIDAD: en chat PRIVADO solo se permite .code (conectar sub-bot);
+    // todos los demas comandos funcionan SOLO en grupos (los owners no tienen limite)
+    if (command && !isGroup && !isOwner && !COMANDOS_PRIVADO_OK.has(command)) {
+      const ahoraAviso = Date.now()
+      if (ahoraAviso - (AVISO_PRIVADO.get(sender) || 0) > 30000) {
+        AVISO_PRIVADO.set(sender, ahoraAviso)
+        await reply(`${panel(`MODO GRUPOS`, `> Los comandos solo funcionan en grupos \ud83d\udeab\n> En privado solo se permite *.code* para conectar un sub-bot \ud83d\udd10`)}`)
+      }
+      return
     }
 
     // Modo privado: si esta activo, solo el owner puede usar comandos (los mensajes normales pasan igual)
