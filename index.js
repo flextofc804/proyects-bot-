@@ -3598,13 +3598,63 @@ case "video":
             await reply("Descargando de Instagram...")
             const { instagramDownload } = await import("./downloader.js")
             const { customApiInfo, customApiDownloadUrl, zetaCoreInstagram } = await import("./youtube.js")
+            // 1) scraping local: es el que ve el CARRUSEL completo con los videos
+            //    de un album ("1/8"); la API suele dar solo miniaturas en esos posts
+            let igResult = null
+            try {
+              igResult = await instagramDownload(text)
+            } catch (scrapeError) {
+              console.log("scraping instagram falló:", scrapeError?.message || scrapeError)
+            }
+            // ALBUM: carrusel con varios videos/fotos ("1/8") -> mandar TODO junto
+            if (igResult?.type === "album" && Array.isArray(igResult.files)) {
+              for (const [i, archivoAlbum] of igResult.files.entries()) {
+                const captionAlbum = i === 0 ? "ʙʏ E𝖱ZABoT-MD/OFC - Instagram" : undefined
+                const bufferAlbum = fs.readFileSync(archivoAlbum)
+                if (igResult.videos?.includes(archivoAlbum)) {
+                  await sock.sendMessage(
+                    from,
+                    { video: bufferAlbum, mimetype: "video/mp4", ...(captionAlbum ? { caption: captionAlbum } : {}) },
+                    { quoted: msg }
+                  )
+                } else {
+                  await sock.sendMessage(
+                    from,
+                    { image: bufferAlbum, ...(captionAlbum ? { caption: captionAlbum } : {}) },
+                    { quoted: msg }
+                  )
+                }
+                removeFile(archivoAlbum)
+              }
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
+              break
+            }
+            if (igResult?.type === "video") {
+              const igBuffer = fs.readFileSync(igResult.file)
+              await sock.sendMessage(
+                from,
+                { video: igBuffer, mimetype: "video/mp4", caption: "௲௳ E𝖱ZABoT-MD/OFC - Instagram" },
+                { quoted: msg }
+              )
+              removeFile(igResult.file)
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
+              break
+            }
+            if (igResult?.type === "images") {
+              for (const igImage of igResult.files.slice(0, 5)) {
+                await sock.sendMessage(from, { image: fs.readFileSync(igImage), caption: "ʙʏ E𝖱ZABoT-MD/OFC - Instagram" }, { quoted: msg })
+                removeFile(igImage)
+              }
+              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
+              break
+            }
+            // 2) ZETA-CORE: video unico en mejor calidad / fotos (fallback)
             let igResultado = null
             try {
               igResultado = await zetaCoreInstagram(text, `zenith_instagram_${Date.now()}`)
             } catch (igZetaError) {
               console.log("ZETA-CORE instagram falló:", igZetaError?.message || igZetaError)
             }
-            // ALBUM: carrusel con varios videos/fotos ("1/8") -> mandar TODO junto
             if (igResultado?.tipo === "album" && Array.isArray(igResultado.items)) {
               for (const [i, itemAlbum] of igResultado.items.entries()) {
                 const captionAlbum = i === 0 ? "\u0299\u028f E\u0280\u1d22\u1d00B\u1d0f\u1d1b-MD/OFC - Instagram" : undefined
@@ -3655,23 +3705,8 @@ case "video":
               removeFile(igApiFile)
               break
             }
-            const igResult = await instagramDownload(text)
-            if (igResult.type === "video") {
-              const igBuffer = fs.readFileSync(igResult.file)
-              await sock.sendMessage(
-                from,
-                { video: igBuffer, mimetype: "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" },
-                { quoted: msg }
-              )
-              removeFile(igResult.file)
-              reaccionar(sock, from, msg, ["✅"]).catch(() => {})
-            } else {
-              for (const igImage of igResult.files.slice(0, 5)) {
-                await sock.sendMessage(from, { image: fs.readFileSync(igImage), caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" }, { quoted: msg })
-                removeFile(igImage)
-              }
-            }
-                reaccionar(sock, from, msg, ["✅"]).catch(() => {})
+            // nada funcionó
+            throw new Error("sin media descargable")
           } catch (e) {
             console.log("Error en instagram:", e?.message || e)
             await reply("Error al descargar de Instagram (el post puede ser privado)")
