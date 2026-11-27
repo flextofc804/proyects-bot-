@@ -3604,6 +3604,29 @@ case "video":
             } catch (igZetaError) {
               console.log("ZETA-CORE instagram falló:", igZetaError?.message || igZetaError)
             }
+            // ALBUM: carrusel con varios videos/fotos ("1/8") -> mandar TODO junto
+            if (igResultado?.tipo === "album" && Array.isArray(igResultado.items)) {
+              for (const [i, itemAlbum] of igResultado.items.entries()) {
+                const captionAlbum = i === 0 ? "\u0299\u028f E\u0280\u1d22\u1d00B\u1d0f\u1d1b-MD/OFC - Instagram" : undefined
+                const bufferAlbum = fs.readFileSync(itemAlbum.file)
+                if (itemAlbum.tipo === "video") {
+                  await sock.sendMessage(
+                    from,
+                    { video: bufferAlbum, mimetype: "video/mp4", ...(captionAlbum ? { caption: captionAlbum } : {}) },
+                    { quoted: msg }
+                  )
+                } else {
+                  await sock.sendMessage(
+                    from,
+                    { image: bufferAlbum, ...(captionAlbum ? { caption: captionAlbum } : {}) },
+                    { quoted: msg }
+                  )
+                }
+                removeFile(itemAlbum.file)
+              }
+              reaccionar(sock, from, msg, ["\u2705"]).catch(() => {})
+              break
+            }
             if (igResultado?.tipo === "imagen") {
               const archivosIg = (igResultado.files || []).slice(0, 5)
               for (const archivoIg of archivosIg) {

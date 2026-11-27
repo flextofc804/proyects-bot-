@@ -1250,10 +1250,38 @@ function zetaCoreCandidatosMedia(data) {
 
 const ES_URL_IMAGEN = /\.(jpe?g|png|webp|gif|heic)(\?|#|$)/i
 
-// IG: los reels/imagenes se resuelven distinto. Devuelve { file, tipo: "video" }
-// o { files: [...], tipo: "imagen" } (posts con 1 o mas fotos, sin recomprimir = calidad maxima)
+// IG: los reels/imagenes se resuelven distinto. Devuelve { file, tipo: "video" },
+// { files: [...], tipo: "imagen" } (posts con 1 o mas fotos, sin recomprimir = calidad maxima)
+// o { tipo: "album", items: [{ file, tipo }] } (carrusel con VARIOS videos/fotos tipo "1/8")
 async function zetaCoreInstagram(url, prefix) {
   let dlError = null
+  // 1) ALBUM: el JSON de /instagram lista todo el carrusel; si hay 2+ media se baja TODO
+  let candidatos = []
+  try {
+    const data = await zetaCoreJson("/instagram", new URLSearchParams({ query: url }))
+    candidatos = zetaCoreCandidatosMedia(data)
+  } catch {}
+  if (candidatos.length >= 2) {
+    const delAlbum = []
+    for (const directo of candidatos) {
+      if (delAlbum.length >= 10) break
+      const tipoCand = ES_URL_IMAGEN.test(directo) ? "imagen" : "video"
+      try {
+        const file = await zetaCoreSaveFile(directo, `${prefix}_alb${delAlbum.length}`, tipoCand)
+        delAlbum.push({ file, tipo: tipoCand })
+      } catch {
+        // si lo intentamos como video pero era una foto (o al reves), probamos el otro tipo
+        try {
+          const file = await zetaCoreSaveFile(directo, `${prefix}_alb${delAlbum.length}`, tipoCand === "video" ? "imagen" : "video")
+          delAlbum.push({ file, tipo: tipoCand === "video" ? "imagen" : "video" })
+        } catch {}
+      }
+    }
+    if (delAlbum.length >= 2) return { tipo: "album", items: delAlbum }
+    // quedo 1 solo (o ninguno): sigo con el flujo de video unico (/dl da mejor calidad)
+    for (const b of delAlbum) removeFile(b.file)
+  }
+  // 2) video unico por /dl
   try {
     const file = await zetaCoreDlRetry(url, "instagram", prefix)
     return { file, tipo: "video" }
@@ -1261,8 +1289,6 @@ async function zetaCoreInstagram(url, prefix) {
     dlError = e
     if (String(e?.message || e).includes("falta la clave")) throw e
   }
-  const data = await zetaCoreJson("/instagram", new URLSearchParams({ query: url }))
-  const candidatos = zetaCoreCandidatosMedia(data)
   if (!candidatos.length) throw dlError || new Error("el post no tiene media descargable")
   const bajados = []
   for (const directo of candidatos) {
