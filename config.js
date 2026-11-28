@@ -11,7 +11,7 @@ export const ERZA_CLAVE_MENU = "erza-2026"
 
 // Canal oficial de WhatsApp del bot
 export const CANAL_JID = "120363432287163228@newsletter"
-export const CANAL_NOMBRE = "Danielaa"
+export const CANAL_NOMBRE = "🌺Danielaa/naniii💖"
 
 export default { OWNER_NUMERO, OWNER_NUMERO_JID, PREFIJO, ERZA_CLAVE_MENU, CANAL_JID, CANAL_NOMBRE }
 
