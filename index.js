@@ -22,7 +22,7 @@ import axios from "axios"
 import play from 'play-dl'
 import ffmpeg from 'ffmpeg-static'
 import { menuOrder, menuAliases, menuCategories } from "./menus.js"
-import { OWNER_NUMERO, OWNER_NUMERO_JID } from "./config.js"
+import { OWNER_NUMERO, OWNER_NUMERO_JID, CANAL_JID, CANAL_NOMBRE } from "./config.js"
 import { comandosPlugins, ejecutarPlugin } from "./plugins/loader.js"
 import { personajesGacha } from "./plugins/gacha/personajes.js"
 const execAsync = promisify(exec)
