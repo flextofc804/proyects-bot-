@@ -24,6 +24,8 @@ import ffmpeg from 'ffmpeg-static'
 import { menuOrder, menuAliases, menuCategories } from "./menus.js"
 import { OWNER_NUMERO, OWNER_NUMERO_JID, CANAL_JID, CANAL_NOMBRE } from "./config.js"
 import { comandosPlugins, ejecutarPlugin } from "./plugins/loader.js"
+import { esComandoNsfw, enviarNsfw } from "./nsfw.js"
+import { ejecutarComando18 } from "./comando18.js"
 import { personajesGacha } from "./plugins/gacha/personajes.js"
 const execAsync = promisify(exec)
 
@@ -750,7 +752,8 @@ async function enviarPortada(sock, from, msg, meta, tipo) {
     let salida = inFile
     try {
       const ffmpeg = await loadFfmpeg()
-      const filter = "crop='min(iw,ih*16/9)':'min(iw*9/16,ih)',scale=720:720:force_original_aspect_ratio=increase,crop=720:720"
+      // sin recorte cuadrado: mantiene la proporcion original (vertical 4:5, horizontal 16:9, cuadrado igual)
+      const filter = "scale='min(720,iw)':-2"
       if (ffmpeg) {
         await new Promise((resolve, reject) => {
           ffmpeg(inFile)
@@ -1005,7 +1008,7 @@ function getUserGacha(userId) {
 
 function getGroupSettings(groupId) {
   if (!db.groups[groupId]) {
-    db.groups[groupId] = { welcome: false, welcomeMsg: "Bienvenido al grupo", goodbye: false, goodbyeMsg: "Adiós", antilink: false, nsfw: false, economy: true, gacha: true, onlyadmin: false, warnLimit: 3, primary: null }
+    db.groups[groupId] = { welcome: false, welcomeMsg: "Bienvenido al grupo", goodbye: false, goodbyeMsg: "Adiós", antilink: false, nsfw: false, nsfwEnabled: false, economy: true, gacha: true, onlyadmin: false, warnLimit: 3, primary: null }
   }
   return db.groups[groupId]
 }
@@ -1098,6 +1101,13 @@ function prefijosBotDesdeDb() {
 }
 const PREFIJOS_BOT = prefijosBotDesdeDb()
 
+// Link del grupo oficial: se usa en el menú, el help, el setprimary y los avisos
+const LINK_GRUPO_OFICIAL = "https://chat.whatsapp.com/HurikkSgXWbIdxH1S99MUz?s=cl&p=a&iam=2"
+
+function pieGrupoOficial() {
+  return `\n\n🔥 ¿Querés más contenido y bots activos 24/7?\nUnite al grupo oficial del bot 👇\n${LINK_GRUPO_OFICIAL}`
+}
+
 // Pie social del menú: Instagram + grupo oficial (aparece al final de todo .menu)
 function pieSocialMenu() {
   return [
@@ -1107,7 +1117,7 @@ function pieSocialMenu() {
     "│ ⚡ Sígueme para más actualizaciones y comandos",
     "│",
     "│ 💬 *Grupo oficial del bot:*",
-    "│ 🚀 https://chat.whatsapp.com/HurikkSgXWbIdxH1S99MUz?s=cl&p=a&iam=2",
+    `│ 🚀 ${LINK_GRUPO_OFICIAL}`,
     "╰─────────⟮ ⚔️ ⟕"
   ].join("\n")
 }
@@ -2098,6 +2108,19 @@ async function startBot(opts = {}) {
 
     // Modo privado: si esta activo, solo el owner puede usar comandos (los mensajes normales pasan igual)
     if (db.settings?.modoPrivado === true && !isOwner) return
+
+    // Un solo bot principal por grupo: si hay primary, los demas subbots ignoran los comandos (salvo setprimary).
+    // Si el principal no esta conectado, el grupo no queda mudo: responden todos hasta que vuelva.
+    if (isGroup && command && command !== "setprimary" && command !== "comando+18" && command !== "comando18") {
+      const numeroPrimario = String(getGroupSettings(from)?.primary || "").replace(/[^0-9]/g, "")
+      if (numeroPrimario) {
+        const numeroMain = String(sockPrincipal?.user?.id || "").split(":")[0].split("@")[0].replace(/[^0-9]/g, "")
+        const principalConectado = numeroPrimario === numeroMain
+          ? Boolean(sockPrincipal?.user)
+          : Boolean(SUBBOTS.get(numeroPrimario)?.conectado)
+        if (principalConectado && numeroPrimario !== botNumber) return
+      }
+    }
 
     try {
       if (command === "trade" && args[0] === "accept") {
@@ -4412,7 +4435,8 @@ case "video":
 
         case "botinfo":
         case "infobot":
-          await reply(`${panel(`INFO BOT`, `> Nombre: ${config.botName}\n> Versión: 1.0.0\n> Creador: ${config.owner}\n> Prefix: ${config.prefix}\n> Librería: Baileys\n> Runtime: Node.js`)}`)
+        case "info":
+          await reply(`${panel(`INFO BOT`, `> Nombre: ${config.botName}\n> Versión: 1.0.0\n> Creador: ${config.owner}\n> Prefix: ${config.prefix}\n> Librería: Baileys\n> Runtime: Node.js`)}${pieGrupoOficial()}`)
           break
 
         case "premium":
@@ -5122,27 +5146,94 @@ case "video":
           const nsfwSettings = getGroupSettings(from)
           if (args[0] === "on") {
             nsfwSettings.nsfw = true
+            nsfwSettings.nsfwEnabled = true
             saveDB()
-            await reply("NSFW activado")
+            await reply(`🔞 Comandos +18 ACTIVADOS en este grupo.${pieGrupoOficial()}`)
           } else if (args[0] === "off") {
             nsfwSettings.nsfw = false
+            nsfwSettings.nsfwEnabled = false
             saveDB()
-            await reply("NSFW desactivado")
+            await reply(`🔞 Comandos +18 DESACTIVADOS en este grupo.${pieGrupoOficial()}`)
           } else {
-            await reply("Uso: #nsfw on/off")
+            await reply(`⚠️ Uso: *.comando+18 on* / *.comando+18 off*${pieGrupoOficial()}`)
           }
           break
 
-        case "setprimary":
+        case "setprimary": {
           if (!isGroup) {
             await reply("Este comando solo funciona en grupos")
             return
           }
-          if (!(await isAdmin())) { await reply("Solo admins pueden usar este comando"); return }
+          if (!(await isAdmin())) { await reply(`Solo admin/owner${pieGrupoOficial()}`); return }
+          // objetivo: mensaje citado, mencion @ o numero en el texto
+          const ctxIg = msg.message?.extendedTextMessage?.contextInfo || msg.message?.imageMessage?.contextInfo || msg.message?.videoMessage?.contextInfo || {}
+          const citadoIg = String(ctxIg?.participant || "")
+          const mencionIg = String(mentioned[0] || "")
+          const numeroArgIg = String(args[0] || "").replace(/[^0-9]/g, "")
+          let objetivoJid = citadoIg || mencionIg || (numeroArgIg ? `${numeroArgIg}@s.whatsapp.net` : "")
+          if (!objetivoJid) {
+            await reply(`⚠️ Uso: *.setprimary* respondiendo a un bot, mencionándolo (@) o con su número.${pieGrupoOficial()}`)
+            return
+          }
+          // WhatsApp cada vez manda mas @lid: lo paso al numero real antes de comparar
+          if (objetivoJid.endsWith("@lid")) {
+            const realIg = await numeroRealDelSender(sock, from, isGroup, objetivoJid, msg)
+            if (realIg) objetivoJid = `${realIg}@s.whatsapp.net`
+          }
+          const numeroObjetivo = String(objetivoJid).split("@")[0].split(":")[0].replace(/[^0-9]/g, "")
+          if (!numeroObjetivo) {
+            await reply(`⚠️ No pude leer el número de ese bot.${pieGrupoOficial()}`)
+            return
+          }
+          const numeroMainSock = String(sockPrincipal?.user?.id || "").split(":")[0].split("@")[0].replace(/[^0-9]/g, "")
+          const instanciasBot = new Set([...SUBBOTS.keys(), numeroMainSock, botNumber, cleanOwnerNum].filter(Boolean))
+          if (!instanciasBot.has(numeroObjetivo)) {
+            await reply(`⚠️ @${numeroObjetivo} no es una instancia de Bot.${pieGrupoOficial()}`)
+            return
+          }
+          let estaEnGrupoIg = false
+          try {
+            const metaIg = await getGroupMeta(sock, from)
+            estaEnGrupoIg = (metaIg?.participants || []).some((p) => {
+              const idNum = String(p?.id || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "")
+              const pnNum = String(p?.phoneNumber || "").split("@")[0].split(":")[0].replace(/[^0-9]/g, "")
+              return idNum === numeroObjetivo || pnNum === numeroObjetivo
+            })
+          } catch {}
+          if (!estaEnGrupoIg) {
+            await reply(`⚠️ @${numeroObjetivo} no está en este grupo.${pieGrupoOficial()}`)
+            return
+          }
           const primarySettings = getGroupSettings(from)
-          primarySettings.primary = text
+          const anteriorIg = String(primarySettings.primary || "").split("@")[0].replace(/[^0-9]/g, "")
+          if (anteriorIg === numeroObjetivo) {
+            await replyWithMention(`ℹ️ @${numeroObjetivo} ya es el bot principal de este grupo.${pieGrupoOficial()}`, [objetivoJid])
+            break
+          }
+          // un solo principal por grupo: el anterior vuelve a ser subbot automaticamente
+          primarySettings.primary = numeroObjetivo
           saveDB()
-          await reply("Grupo principal establecido")
+          const mencionesIg = [objetivoJid]
+          let textoCambioIg = `✅ @${numeroObjetivo} ahora es el bot principal.`
+          if (anteriorIg) {
+            textoCambioIg += ` El anterior @${anteriorIg} quedó como subbot.`
+            mencionesIg.push(`${anteriorIg}@s.whatsapp.net`)
+          }
+          await replyWithMention(`${textoCambioIg}${pieGrupoOficial()}`, mencionesIg)
+          break
+        }
+
+        case "comando+18":
+        case "comando18":
+          await ejecutarComando18({
+            args,
+            reply,
+            isAdmin,
+            isGroup,
+            settings: getGroupSettings(from),
+            guardar: saveDB,
+            pie: pieGrupoOficial()
+          })
           break
 
         case "ani":
@@ -5215,14 +5306,41 @@ case "video":
             saveDB()
             break
           }
+          // +18 con media: el contenido sale de nsfw.json (nada hardcodeado aca)
+          if (esComandoNsfw(command)) {
+            if (!isGroup) {
+              await reply("Este comando solo funciona en grupos")
+              return
+            }
+            const ajustesNsfw = getGroupSettings(from)
+            const nsfwActivo = ajustesNsfw.nsfwEnabled ?? ajustesNsfw.nsfw
+            if (!nsfwActivo) {
+              await reply(`🔞 Los comandos +18 están desactivados. Pedile a un admin que ponga .comando+18 on${pieGrupoOficial()}`)
+              return
+            }
+            const targetNsfw = mentioned.length > 0 ? mentioned[0] : null
+            const captionNsfw = targetNsfw
+              ? `@${senderNumber} → @${String(targetNsfw).split("@")[0]}\n\n🔥 EʀᴢᴀBᴏᴛ-MD/OFC +18${pieGrupoOficial()}`
+              : `🔥 EʀᴢᴀBᴏᴛ-MD/OFC +18${pieGrupoOficial()}`
+            await enviarNsfw({
+              sock,
+              from,
+              msg,
+              reply,
+              comando: command,
+              caption: captionNsfw,
+              mentions: targetNsfw ? [sender, targetNsfw] : [sender]
+            })
+            break
+          }
           if (nsfwActions[command]) {
             if (!isGroup) {
               await reply("Este comando solo funciona en grupos")
               return
             }
             const nsfwSettings2 = getGroupSettings(from)
-            if (!nsfwSettings2.nsfw) {
-              await reply("El NSFW está desactivado en este grupo")
+            if (!(nsfwSettings2.nsfwEnabled ?? nsfwSettings2.nsfw)) {
+              await reply(`🔞 Los comandos +18 están desactivados. Pedile a un admin que ponga .comando+18 on${pieGrupoOficial()}`)
               return
             }
             const action = nsfwActions[command]

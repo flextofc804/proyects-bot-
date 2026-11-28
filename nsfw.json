@@ -1,0 +1,59 @@
+{
+  "_nota": "Contenido +18 del bot. Cada comando elige un archivo al azar. gifs/mp4 quedan vacios porque las APIs publicas solo devuelven imagenes fijas hoy; si agregas links propios, el handler los usa igual.",
+  "comandos": {
+    "tetas": {
+      "gifs": [],
+      "mp4": [],
+      "fotos": [
+        "https://cdn.nekosapi.com/nekos-api/images/original/8da6cfd9-2e67-4ec9-871c-b1dc16b47237.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/5bd3beb5-a091-4624-ace1-9df60232a38d.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/7a93ab03-4c6b-4977-af82-2ef46ed43c30.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/8d26a86a-767e-40e6-993a-f40570e77534.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/7403c00a-6a60-4e5b-8e9b-2d4f191f2ea8.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/cb4d21d4-f103-40bf-9376-338fbc6d6c13.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/218d741f-cee6-4965-b0f0-4de276b0dace.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/47d67c21-724d-4fe5-b330-adce2be698f1.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/93b37c65-a659-4092-918a-11d8ef417c64.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/0b76fa60-7680-43ba-920d-55d83175b857.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/521e2d21-5930-4ab2-9f2d-ef665a03d9b3.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/e5170173-cd9c-40b9-a99f-6a0621c238a4.webp"
+      ]
+    },
+    "culo": {
+      "gifs": [],
+      "mp4": [],
+      "fotos": [
+        "https://cdn.nekosapi.com/nekos-api/images/original/71cc3794-f816-49c5-97d7-a7780f6a3082.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/14ef5eba-fc32-42c3-be07-847fc9eef17f.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/dc54412d-5016-4500-b165-083efe0cc7df.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/c956c6b7-fdea-4753-b570-86d88fcce8e9.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/533f94b0-fdee-4635-8bdc-fd0bad1c821d.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/d353be6d-bd09-4be3-a0dd-5708d66328eb.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/7c2df558-84fe-4a0b-b330-527f33e55207.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/36d5f6a7-093f-456d-bd77-f11794005dc5.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/9e05b87f-6c22-4449-8ef9-3728eed72f1d.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/14d0d7cc-df5c-43cc-b265-266c10aaacbe.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/3cf2b49a-af63-445a-b2b1-abab140e16cf.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/08ad7ce6-3b3b-406a-b761-57b2cbfaaee8.webp"
+      ]
+    },
+    "hentai": {
+      "gifs": [],
+      "mp4": [],
+      "fotos": [
+        "https://cdn.nekosapi.com/nekos-api/images/original/04ed8ac0-3881-42c1-b65a-56572d68be9e.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/00757648-b94e-494d-9d3b-6a8a56b0ac08.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/50490407-58bd-40e2-9a17-eeee6268eb05.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/5f44f279-62e4-4086-8612-ff1a9f0421c5.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/b1c61289-e12a-4837-8f5b-5d0f5ba127e8.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/076cedc5-24c4-4938-b3d7-420d2faa39c7.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/5bad695f-8f19-44e2-a89d-eddfe67bad3d.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/34910f11-00fa-4cd0-908e-c723b0a29972.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/e70b15b9-24ef-4117-8872-37993479eeed.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/4e08b610-dbc5-4da0-b5d9-77b0e6b0c199.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/a81cda57-311f-4b66-b4d8-5313b9e52808.webp",
+        "https://cdn.nekosapi.com/nekos-api/images/original/28a486c3-237b-4b29-b2e6-393a1ffd6eac.webp"
+      ]
+    }
+  }
+}
