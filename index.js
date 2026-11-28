@@ -3643,7 +3643,6 @@ case "video":
           const urlsIg = String(text).split(/\s+/).filter((u) => /^https?:\/\//i.test(u))
           if (urlsIg.length > 1) {
             try {
-              await reply(`Descargando ${urlsIg.length} publicaciones de Instagram... \ud83d\udce5`)
               const { instagramDownload } = await import("./downloader.js")
               const { zetaCoreInstagram } = await import("./youtube.js")
               const itemsIg = []
@@ -3681,7 +3680,6 @@ case "video":
               }
               if (!itemsIg.length) throw new Error("sin media descargable")
               for (const [i, itemIg2] of itemsIg.entries()) {
-                const captionIg = i === 0 ? "\u0299\u028f E\u0280\u1d22\u1d00B\u1d0f\u1d1b-MD/OFC - Instagram" : undefined
                 const bufferIg = fs.readFileSync(itemIg2.file)
                 if (itemIg2.tipo === "video") {
                   await sock.sendMessage(from, { video: bufferIg, mimetype: "video/mp4" }, { quoted: msg })
@@ -3711,7 +3709,6 @@ case "video":
             // ALBUM: carrusel con varios videos/fotos ("1/8") -> mandar TODO junto
             if (igResult?.type === "album" && Array.isArray(igResult.files)) {
               for (const [i, archivoAlbum] of igResult.files.entries()) {
-                const captionAlbum = i === 0 ? "ʙʏ E𝖱ZABoT-MD/OFC - Instagram" : undefined
                 const bufferAlbum = fs.readFileSync(archivoAlbum)
                 if (igResult.videos?.includes(archivoAlbum)) {
                   await sock.sendMessage(
@@ -3735,7 +3732,7 @@ case "video":
               const igBuffer = fs.readFileSync(igResult.file)
               await sock.sendMessage(
                 from,
-                { video: igBuffer, mimetype: "video/mp4", caption: "௲௳ E𝖱ZABoT-MD/OFC - Instagram" },
+                { video: igBuffer, mimetype: "video/mp4" },
                 { quoted: msg }
               )
               removeFile(igResult.file)
@@ -3744,7 +3741,7 @@ case "video":
             }
             if (igResult?.type === "images") {
               for (const igImage of igResult.files.slice(0, 5)) {
-                await sock.sendMessage(from, { image: fs.readFileSync(igImage), caption: "ʙʏ E𝖱ZABoT-MD/OFC - Instagram" }, { quoted: msg })
+                await sock.sendMessage(from, { image: fs.readFileSync(igImage) }, { quoted: msg })
                 removeFile(igImage)
               }
               reaccionar(sock, from, msg, ["✅"]).catch(() => {})
@@ -3759,7 +3756,6 @@ case "video":
             }
             if (igResultado?.tipo === "album" && Array.isArray(igResultado.items)) {
               for (const [i, itemAlbum] of igResultado.items.entries()) {
-                const captionAlbum = i === 0 ? "\u0299\u028f E\u0280\u1d22\u1d00B\u1d0f\u1d1b-MD/OFC - Instagram" : undefined
                 const bufferAlbum = fs.readFileSync(itemAlbum.file)
                 if (itemAlbum.tipo === "video") {
                   await sock.sendMessage(
@@ -3800,7 +3796,7 @@ case "video":
               const igBuffer = fs.readFileSync(igApiFile)
               await sock.sendMessage(
                 from,
-                { video: igBuffer, mimetype: "video/mp4", caption: "୲୳ EʀᴢᴀBᴏᴛ-MD/OFC - Instagram" },
+                { video: igBuffer, mimetype: "video/mp4" },
                 { quoted: msg }
               )
               reaccionar(sock, from, msg, ["✅"]).catch(() => {})
