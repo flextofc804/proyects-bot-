@@ -1677,9 +1677,35 @@ async function startBot(opts = {}) {
   })
 
   // envoltorio: registrar el id de cada mensaje enviado por ESTE socket
+    // envoltorio: registrar el id de cada mensaje enviado y adjuntar el canal oficial en todo el bot
   const sendMessageBase = sock.sendMessage.bind(sock)
   sock.sendMessage = async (jid, content, extra) => {
-    const res = await sendMessageBase(jid, content, extra)
+    let payload = content
+    if (
+      CANAL_JID &&
+      payload &&
+      typeof payload === "object" &&
+      !payload.react &&
+      !payload.delete &&
+      !payload.edit &&
+      !payload.sticker &&
+      (payload.text || payload.image || payload.video || payload.audio || payload.document)
+    ) {
+      payload = {
+        ...payload,
+        contextInfo: {
+          ...(payload.contextInfo || {}),
+          isForwarded: true,
+          forwardingScore: 999,
+          forwardedNewsletterMessageInfo: {
+            newsletterJid: CANAL_JID,
+            newsletterName: CANAL_NOMBRE || "Canal Oficial",
+            serverMessageId: 100
+          }
+        }
+      }
+    }
+    const res = await sendMessageBase(jid, payload, extra)
     try { marcarIdPropio(res?.key?.id) } catch {}
     return res
   }
